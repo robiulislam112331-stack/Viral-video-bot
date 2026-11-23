@@ -1,0 +1,6 @@
+{
+  "name": "CineVault Bot",
+  "description": "Telegram Video Bot with Force Join channel verification, 3-step ad watch gate, bKash/Nagad paid downloads, and a full Admin Panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
