@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
@@ -743,8 +744,8 @@
         // Must return a Promise that resolves when the ad completes.
         // ============================================================
         function show_Monetag_Ad() {
-          if (typeof window.show_MONETAG_ZONE_ID === 'function') {
-            return window.show_MONETAG_ZONE_ID();
+          if (typeof window.show_12118221 === 'function') {
+            return window.show_12118221();
           }
           // Preview simulation when Monetag Zone script is not yet attached
           return new Promise(function (resolve) {
