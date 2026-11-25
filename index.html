@@ -1,29 +1,1505 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CineVault Bot — Premium Video Hub</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>CineVault — Watch Unlimited Movies</title>
     <meta
       name="description"
-      content="Telegram Video Bot with Force Join channel verification, 3-step ad watch gate, bKash/Nagad paid downloads, and a full Admin Panel."
+      content="CineVault Telegram Mini App — Watch Unlimited Movies - No Money Needed."
     />
-    <meta property="og:title" content="CineVault Bot — Premium Video Hub" />
-    <meta
-      property="og:description"
-      content="Telegram Video Bot with Force Join channel verification, 3-step ad watch gate, bKash/Nagad paid downloads, and a full Admin Panel."
-    />
+    <meta property="og:title" content="CineVault" />
+    <meta property="og:description" content="Watch Unlimited Movies - No Money Needed" />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <style>
+      :root {
+        --bg-pure: #000000;
+        --card-top: #1a1a1a;
+        --card-bottom: #0a0a0a;
+        --red-bright: #ff4d4d;
+        --red-deep: #b30000;
+        --red-ledge: #5a0000;
+        --red-border: rgba(255, 58, 36, 0.48);
+        --orange-glow: rgba(255, 92, 28, 0.32);
+        --text-main: #ffffff;
+        --text-muted: #b0a9a7;
+      }
+
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+        background-color: var(--bg-pure);
+        color: var(--text-main);
+        font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+        overflow-x: hidden;
+      }
+
+      /* Pure black background with top red-orange cinematic radial glow */
+      body {
+        background-image:
+          radial-gradient(
+            ellipse 95% 48% at 50% -6%,
+            rgba(255, 84, 24, 0.36) 0%,
+            rgba(185, 16, 12, 0.22) 38%,
+            rgba(60, 4, 4, 0.08) 65%,
+            #000000 100%
+          ),
+          radial-gradient(
+            circle at 88% 35%,
+            rgba(255, 52, 20, 0.1) 0%,
+            transparent 45%
+          );
+        background-attachment: fixed;
+      }
+
+      .app-shell {
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 24px 16px 56px;
+      }
+
+      @media (min-width: 768px) {
+        .app-shell {
+          max-width: 960px;
+          padding: 36px 24px 72px;
+        }
+      }
+
+      /* 3D Hero Logo */
+      .hero {
+        text-align: center;
+        padding: 12px 6px 26px;
+        perspective: 900px;
+      }
+
+      .logo-3d {
+        margin: 0;
+        font-family: "Montserrat", sans-serif;
+        font-weight: 900;
+        font-size: clamp(2.75rem, 11vw, 4.4rem);
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+        background: linear-gradient(180deg, #ffffff 0%, #ffd8cf 36%, #ff3d24 78%, #b30000 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        transform: perspective(700px) rotateX(8deg);
+        filter:
+          drop-shadow(0 2px 0 #7a0000)
+          drop-shadow(0 5px 0 #480000)
+          drop-shadow(0 10px 18px rgba(0, 0, 0, 0.95))
+          drop-shadow(0 0 28px rgba(255, 64, 32, 0.55));
+        user-select: none;
+      }
+
+      .subtitle {
+        margin: 12px auto 0;
+        max-width: 34ch;
+        font-size: 0.94rem;
+        font-weight: 500;
+        letter-spacing: 0.015em;
+        color: #e4d8d5;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+      }
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 22px 2px 14px;
+      }
+
+      .section-title {
+        margin: 0;
+        font-family: "Montserrat", sans-serif;
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        color: #ffffff;
+        text-shadow: 0 2px 12px rgba(255, 60, 25, 0.35);
+      }
+
+      .section-meta {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+      }
+
+      /* 3D Card Base */
+      .card-3d {
+        background: linear-gradient(160deg, var(--card-top) 0%, var(--card-bottom) 100%);
+        border: 1px solid var(--red-border);
+        border-radius: 20px;
+        box-shadow:
+          0 22px 46px rgba(0, 0, 0, 0.92),
+          0 8px 22px rgba(255, 48, 16, 0.14),
+          inset 0 1px 0 rgba(255, 255, 255, 0.14),
+          inset 0 -1px 0 rgba(255, 50, 20, 0.12);
+        transform: perspective(1000px) rotateX(1.2deg);
+        transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.24s ease;
+      }
+
+      .card-3d:hover {
+        transform: perspective(1000px) rotateX(0deg) translateY(-2px);
+        border-color: rgba(255, 92, 56, 0.72);
+      }
+
+      /* 3D Pushable Buttons */
+      .btn-3d {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 14px;
+        border: none;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ff4d4d 0%, #b30000 100%);
+        color: #ffffff;
+        font-family: "Plus Jakarta Sans", sans-serif;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        text-decoration: none;
+        white-space: nowrap;
+        box-shadow:
+          0 8px 0 #5a0000,
+          0 14px 24px rgba(179, 0, 0, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.32);
+        transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.15s ease;
+      }
+
+      .btn-3d:hover {
+        filter: brightness(1.07);
+      }
+
+      .btn-3d:active {
+        transform: translateY(6px);
+        box-shadow:
+          0 2px 0 #5a0000,
+          0 6px 12px rgba(179, 0, 0, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      }
+
+      .btn-3d:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .btn-3d-amber {
+        background: linear-gradient(180deg, #ff7034 0%, #b82200 100%);
+        box-shadow:
+          0 8px 0 #570d00,
+          0 14px 24px rgba(210, 56, 0, 0.36),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      .btn-3d-amber:active {
+        box-shadow:
+          0 2px 0 #570d00,
+          0 6px 12px rgba(210, 56, 0, 0.26);
+      }
+
+      .btn-3d-unlocked {
+        background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
+        box-shadow:
+          0 8px 0 #094420,
+          0 14px 24px rgba(21, 128, 61, 0.38),
+          inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      .btn-3d-unlocked:active {
+        box-shadow:
+          0 2px 0 #094420,
+          0 6px 12px rgba(21, 128, 61, 0.26);
+      }
+
+      /* Channels Grid */
+      .channels-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      @media (min-width: 768px) {
+        .channels-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+
+      .channel-card {
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      @media (min-width: 768px) {
+        .channel-card {
+          flex-direction: column;
+          align-items: stretch;
+          gap: 14px;
+        }
+      }
+
+      .channel-info {
+        min-width: 0;
+      }
+
+      .channel-name {
+        margin: 0;
+        font-size: 0.96rem;
+        font-weight: 700;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .channel-meta {
+        margin: 4px 0 0;
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .channel-action {
+        flex-shrink: 0;
+        min-width: 118px;
+        padding-bottom: 6px;
+      }
+
+      @media (min-width: 768px) {
+        .channel-action {
+          width: 100%;
+        }
+      }
+
+      /* Video Grid */
+      .videos-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      @media (min-width: 768px) {
+        .videos-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      .video-card {
+        padding: 18px;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+
+      @media (max-width: 420px) {
+        .video-card {
+          padding: 14px;
+          gap: 14px;
+        }
+      }
+
+      /* 3D Tilted Movie Poster */
+      .poster-stage {
+        flex-shrink: 0;
+        width: 112px;
+        perspective: 900px;
+      }
+
+      @media (min-width: 520px) {
+        .poster-stage {
+          width: 128px;
+        }
+      }
+
+      .poster-tilt {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 3 / 4;
+        border-radius: 14px;
+        overflow: hidden;
+        background: linear-gradient(135deg, #ff512f 0%, #b30000 55%, #190505 100%);
+        padding: 2px;
+        transform: rotateY(-8deg) rotateX(2deg);
+        transform-style: preserve-3d;
+        box-shadow:
+          -10px 14px 28px rgba(0, 0, 0, 0.92),
+          -4px 8px 20px rgba(255, 68, 28, 0.28);
+        transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .video-card:hover .poster-tilt {
+        transform: rotateY(-2deg) rotateX(0deg) scale(1.02);
+      }
+
+      .poster-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        background: linear-gradient(145deg, #2a0c08 0%, #0d0d0d 100%);
+      }
+
+      .poster-inner img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .poster-scrim {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.05) 45%,
+          rgba(0, 0, 0, 0.78) 100%
+        );
+        pointer-events: none;
+      }
+
+      .poster-duration {
+        position: absolute;
+        right: 7px;
+        bottom: 7px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #ffffff;
+        background: rgba(0, 0, 0, 0.78);
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .video-body {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .video-title {
+        margin: 0;
+        font-family: "Montserrat", sans-serif;
+        font-size: 1rem;
+        font-weight: 800;
+        line-height: 1.25;
+        color: #ffffff;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .video-meta {
+        margin: 6px 0 0;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #ff9f85;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .video-meta span.sep {
+        color: #6b5e5c;
+      }
+
+      .video-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+        padding-bottom: 8px;
+      }
+
+      @media (min-width: 440px) {
+        .video-actions {
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+      }
+
+      /* Modals (Ad Gate + Video Player) */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.86);
+        backdrop-filter: blur(8px);
+      }
+
+      .modal-backdrop.open {
+        display: flex;
+      }
+
+      .modal-card {
+        width: 100%;
+        max-width: 420px;
+        padding: 22px;
+        transform: none;
+      }
+
+      .modal-card:hover {
+        transform: none;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .modal-title {
+        margin: 0;
+        font-family: "Montserrat", sans-serif;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .modal-sub {
+        margin: 5px 0 0;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+
+      .modal-close {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: #141414;
+        color: #ffffff;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .ad-progress-box {
+        margin-top: 18px;
+        padding: 16px;
+        border-radius: 16px;
+        background: #090909;
+        border: 1px solid rgba(255, 68, 36, 0.28);
+        box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.85);
+      }
+
+      .ad-counter-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      .ad-counter-value {
+        font-family: "Montserrat", sans-serif;
+        font-size: 1rem;
+        color: #ff7a59;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .progress-track {
+        width: 100%;
+        height: 12px;
+        border-radius: 999px;
+        background: #1e1414;
+        overflow: hidden;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.9);
+      }
+
+      .progress-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff7838 0%, #ff3333 100%);
+        box-shadow: 0 0 14px rgba(255, 68, 34, 0.65);
+        transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      .ad-status-note {
+        margin: 12px 0 0;
+        font-size: 0.78rem;
+        color: #cfc6c4;
+        line-height: 1.45;
+      }
+
+      .modal-action-wrap {
+        margin-top: 20px;
+        padding-bottom: 8px;
+      }
+
+      /* In-App Player Modal */
+      .player-card {
+        width: 100%;
+        max-width: 720px;
+        padding: 18px;
+        transform: none;
+      }
+
+      .player-card:hover {
+        transform: none;
+      }
+
+      .player-frame {
+        margin-top: 14px;
+        position: relative;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        border-radius: 14px;
+        overflow: hidden;
+        background: #000000;
+        border: 1px solid rgba(255, 60, 36, 0.35);
+      }
+
+      .player-frame video,
+      .player-frame canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: contain;
+      }
+
+      .player-controls {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .player-time {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #e4d8d5;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .empty-state {
+        padding: 28px 20px;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+      }
+    </style>
   </head>
-  <body class="bg-[#0A0B0E] text-[#F3F4F6] antialiased selection:bg-[#E5A93C]/25 selection:text-[#F8D082]">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body>
+    <main class="app-shell">
+      <!-- Hero Brand -->
+      <header class="hero">
+        <h1 class="logo-3d">CineVault</h1>
+        <p class="subtitle">Watch Unlimited Movies - No Money Needed</p>
+      </header>
+
+      <!-- Channels Section -->
+      <section aria-labelledby="channels-heading">
+        <div class="section-head">
+          <h2 id="channels-heading" class="section-title">Official Channels</h2>
+          <span class="section-meta">3 Channels</span>
+        </div>
+        <div id="channels-list" class="channels-grid"></div>
+      </section>
+
+      <!-- Video List Section -->
+      <section aria-labelledby="videos-heading">
+        <div class="section-head">
+          <h2 id="videos-heading" class="section-title">Trending Releases</h2>
+          <span id="videos-count" class="section-meta">4 Movies</span>
+        </div>
+        <div id="videos-list" class="videos-grid"></div>
+      </section>
+    </main>
+
+    <!-- Monetag Ads Unlock Popup -->
+    <div
+      id="ad-modal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="ad-modal-title"
+    >
+      <div class="card-3d modal-card">
+        <div class="modal-header">
+          <div>
+            <h3 id="ad-modal-title" class="modal-title">Watch Video - 5 Ads</h3>
+            <p id="ad-modal-movie" class="modal-sub">Movie Title</p>
+          </div>
+          <button
+            id="ad-modal-close"
+            type="button"
+            class="modal-close"
+            aria-label="Close popup"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="ad-progress-box">
+          <div class="ad-counter-row">
+            <span>Ads Watched</span>
+            <span id="ad-counter-text" class="ad-counter-value">0/5</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div id="ad-progress-fill" class="progress-fill"></div>
+          </div>
+          <p id="ad-status-note" class="ad-status-note">
+            Complete the required ads to unlock instantly. Watch unlimited movies with zero fees.
+          </p>
+        </div>
+
+        <div class="modal-action-wrap">
+          <button id="ad-action-btn" type="button" class="btn-3d">
+            Watch Ad
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-App Video Player Popup -->
+    <div
+      id="player-modal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="player-modal-title"
+    >
+      <div class="card-3d player-card">
+        <div class="modal-header">
+          <div>
+            <h3 id="player-modal-title" class="modal-title">Now Playing</h3>
+            <p id="player-modal-meta" class="modal-sub">4K HDR · 08:42</p>
+          </div>
+          <button
+            id="player-modal-close"
+            type="button"
+            class="modal-close"
+            aria-label="Close player"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div id="player-frame" class="player-frame"></div>
+
+        <div class="player-controls">
+          <span id="player-time" class="player-time">00:00 / 00:00</span>
+          <div style="width: 130px; padding-bottom: 6px;">
+            <button id="player-toggle-btn" type="button" class="btn-3d">
+              Pause
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+
+        // ============================================================
+        // 1. MONETAG REWARDED AD PLACEHOLDER
+        // Replace the body of show_Monetag_Ad() with your Monetag
+        // Rewarded Interstitial / Zone SDK call, e.g.:
+        //   return window.show_1234567(); // <-- Your Monetag Zone ID
+        // Must return a Promise that resolves when the ad completes.
+        // ============================================================
+        function show_Monetag_Ad() {
+          if (typeof window.show_MONETAG_ZONE_ID === 'function') {
+            return window.show_MONETAG_ZONE_ID();
+          }
+          // Preview simulation when Monetag Zone script is not yet attached
+          return new Promise(function (resolve) {
+            setTimeout(resolve, 900);
+          });
+        }
+
+        // ============================================================
+        // 2. TELEGRAM WEBAPP INITIALIZATION (Automatic User ID)
+        // ============================================================
+        var tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (tg) {
+          try {
+            tg.ready();
+            tg.expand();
+            if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#000000');
+            if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#000000');
+          } catch (e) {}
+        }
+
+        var telegramUserId =
+          tg &&
+          tg.initDataUnsafe &&
+          tg.initDataUnsafe.user &&
+          tg.initDataUnsafe.user.id
+            ? String(tg.initDataUnsafe.user.id)
+            : 'guest_viewer';
+
+        // ============================================================
+        // 3. DEFAULT CHANNELS & MOVIES (Standalone + Server Sync)
+        // ============================================================
+        var state = {
+          watchAdsRequired: 5,
+          downloadAdsRequired: 15,
+          channels: [
+            {
+              id: 'ch_main',
+              name: 'CineVault Main',
+              handle: '@CineVaultMain',
+              members: '48.2K',
+              url: 'https://t.me/CineVaultMain',
+            },
+            {
+              id: 'ch_nightreel',
+              name: 'NightReel',
+              handle: '@NightReelReleases',
+              members: '21.9K',
+              url: 'https://t.me/NightReelReleases',
+            },
+            {
+              id: 'ch_vault',
+              name: 'Vault Updates',
+              handle: '@VaultUpdatesBD',
+              members: '14.5K',
+              url: 'https://t.me/VaultUpdatesBD',
+            },
+          ],
+          videos: [
+            {
+              id: 'vid_tokyo_rain',
+              title: 'Midnight Neon: Tokyo Rain',
+              quality: '4K HDR',
+              duration: '08:42',
+              posterUrl: '/src/assets/images/thumb_tokyo_rain_1795435877207.jpg',
+              videoUrl: 'demo://tokyo-rain',
+            },
+            {
+              id: 'vid_alpine_dawn',
+              title: 'Dolomites: Edge of Dawn',
+              quality: '4K UHD',
+              duration: '12:15',
+              posterUrl: '/src/assets/images/thumb_alpine_dawn_1795435874924.jpg',
+              videoUrl: 'demo://alpine-dawn',
+            },
+            {
+              id: 'vid_analog_studio',
+              title: 'Analog Echo: Studio Noir',
+              quality: '1080p',
+              duration: '14:30',
+              posterUrl: '/src/assets/images/thumb_analog_studio_1795435876576.jpg',
+              videoUrl: 'demo://analog-studio',
+            },
+            {
+              id: 'vid_night_circuit',
+              title: 'Night Circuit: Apex GT3',
+              quality: '4K 60fps',
+              duration: '09:54',
+              posterUrl: '/src/assets/images/thumb_night_circuit_1795435876007.jpg',
+              videoUrl: 'demo://night-circuit',
+            },
+          ],
+          adProgress: loadSavedProgress(),
+          joinedChannels: loadJoinedChannels(),
+        };
+
+        function storageKey(suffix) {
+          return 'cinevault_' + suffix + '_' + telegramUserId;
+        }
+
+        function loadSavedProgress() {
+          try {
+            var raw = localStorage.getItem(storageKey('ads'));
+            return raw ? JSON.parse(raw) : {};
+          } catch (e) {
+            return {};
+          }
+        }
+
+        function saveProgress() {
+          try {
+            localStorage.setItem(storageKey('ads'), JSON.stringify(state.adProgress));
+          } catch (e) {}
+        }
+
+        function loadJoinedChannels() {
+          try {
+            var raw = localStorage.getItem(storageKey('joined'));
+            return raw ? JSON.parse(raw) : {};
+          } catch (e) {
+            return {};
+          }
+        }
+
+        function saveJoinedChannels() {
+          try {
+            localStorage.setItem(storageKey('joined'), JSON.stringify(state.joinedChannels));
+          } catch (e) {}
+        }
+
+        // Optional sync with backend when running inside the hosted app
+        function syncFromServer() {
+          if (window.location.protocol === 'file:') return;
+          fetch('/api/miniapp/data')
+            .then(function (res) {
+              return res.ok ? res.json() : null;
+            })
+            .then(function (payload) {
+              if (!payload) return;
+              if (Array.isArray(payload.channels) && payload.channels.length > 0) {
+                state.channels = payload.channels;
+              }
+              if (Array.isArray(payload.videos)) {
+                state.videos = payload.videos;
+              }
+              if (typeof payload.watchAdsRequired === 'number' && payload.watchAdsRequired > 0) {
+                state.watchAdsRequired = payload.watchAdsRequired;
+              }
+              if (
+                typeof payload.downloadAdsRequired === 'number' &&
+                payload.downloadAdsRequired > 0
+              ) {
+                state.downloadAdsRequired = payload.downloadAdsRequired;
+              }
+              renderChannels();
+              renderVideos();
+            })
+            .catch(function () {});
+        }
+
+        function openTelegramChannel(url) {
+          if (tg && typeof tg.openTelegramLink === 'function' && url.indexOf('https://t.me/') === 0) {
+            try {
+              tg.openTelegramLink(url);
+              return;
+            } catch (e) {}
+          }
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        // ============================================================
+        // 4. RENDER CHANNELS & VIDEOS
+        // ============================================================
+        function renderChannels() {
+          var container = document.getElementById('channels-list');
+          container.innerHTML = '';
+
+          state.channels.forEach(function (ch) {
+            var card = document.createElement('article');
+            card.className = 'card-3d channel-card';
+
+            var info = document.createElement('div');
+            info.className = 'channel-info';
+
+            var title = document.createElement('h3');
+            title.className = 'channel-name';
+            title.textContent = ch.name;
+
+            var meta = document.createElement('p');
+            meta.className = 'channel-meta';
+            meta.textContent = ch.handle + (ch.members ? ' · ' + ch.members : '');
+
+            info.appendChild(title);
+            info.appendChild(meta);
+
+            var actionWrap = document.createElement('div');
+            actionWrap.className = 'channel-action';
+
+            var isJoined = Boolean(state.joinedChannels[ch.id]);
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = isJoined ? 'btn-3d btn-3d-unlocked' : 'btn-3d';
+            btn.textContent = isJoined ? 'Joined' : 'Join Channel';
+            btn.addEventListener('click', function () {
+              openTelegramChannel(ch.url);
+              state.joinedChannels[ch.id] = true;
+              saveJoinedChannels();
+              renderChannels();
+            });
+
+            actionWrap.appendChild(btn);
+            card.appendChild(info);
+            card.appendChild(actionWrap);
+            container.appendChild(card);
+          });
+        }
+
+        function getAdProgress(videoId, mode) {
+          var entry = state.adProgress[videoId];
+          if (!entry) return 0;
+          return mode === 'watch' ? entry.watch || 0 : entry.download || 0;
+        }
+
+        function setAdProgress(videoId, mode, count) {
+          if (!state.adProgress[videoId]) {
+            state.adProgress[videoId] = { watch: 0, download: 0 };
+          }
+          if (mode === 'watch') {
+            state.adProgress[videoId].watch = count;
+          } else {
+            state.adProgress[videoId].download = count;
+          }
+          saveProgress();
+        }
+
+        function renderVideos() {
+          var container = document.getElementById('videos-list');
+          var countLabel = document.getElementById('videos-count');
+          countLabel.textContent =
+            state.videos.length + (state.videos.length === 1 ? ' Movie' : ' Movies');
+
+          container.innerHTML = '';
+
+          if (state.videos.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'card-3d empty-state';
+            empty.textContent = 'No movies available right now.';
+            container.appendChild(empty);
+            return;
+          }
+
+          state.videos.forEach(function (video) {
+            var card = document.createElement('article');
+            card.className = 'card-3d video-card';
+
+            // 3D Tilted Poster
+            var posterStage = document.createElement('div');
+            posterStage.className = 'poster-stage';
+
+            var posterTilt = document.createElement('div');
+            posterTilt.className = 'poster-tilt';
+
+            var posterInner = document.createElement('div');
+            posterInner.className = 'poster-inner';
+
+            var img = document.createElement('img');
+            img.src = video.posterUrl;
+            img.alt = video.title;
+            img.referrerPolicy = 'no-referrer';
+            img.addEventListener('error', function () {
+              img.style.display = 'none';
+            });
+
+            var scrim = document.createElement('div');
+            scrim.className = 'poster-scrim';
+
+            var durBadge = document.createElement('span');
+            durBadge.className = 'poster-duration';
+            durBadge.textContent = video.duration;
+
+            posterInner.appendChild(img);
+            posterInner.appendChild(scrim);
+            posterInner.appendChild(durBadge);
+            posterTilt.appendChild(posterInner);
+            posterStage.appendChild(posterTilt);
+
+            // Body
+            var body = document.createElement('div');
+            body.className = 'video-body';
+
+            var textBlock = document.createElement('div');
+            var titleEl = document.createElement('h3');
+            titleEl.className = 'video-title';
+            titleEl.textContent = video.title;
+
+            var metaEl = document.createElement('p');
+            metaEl.className = 'video-meta';
+            metaEl.innerHTML =
+              '<span>' +
+              escapeHtml(video.quality) +
+              '</span><span class="sep">·</span><span>' +
+              escapeHtml(video.duration) +
+              '</span>';
+
+            textBlock.appendChild(titleEl);
+            textBlock.appendChild(metaEl);
+
+            // Buttons
+            var actions = document.createElement('div');
+            actions.className = 'video-actions';
+
+            var watchDone =
+              getAdProgress(video.id, 'watch') >= state.watchAdsRequired;
+            var watchBtn = document.createElement('button');
+            watchBtn.type = 'button';
+            watchBtn.className = watchDone ? 'btn-3d btn-3d-unlocked' : 'btn-3d';
+            watchBtn.textContent = watchDone
+              ? 'Play Movie'
+              : 'Watch - ' + state.watchAdsRequired + ' Ads';
+            watchBtn.addEventListener('click', function () {
+              if (getAdProgress(video.id, 'watch') >= state.watchAdsRequired) {
+                openVideoPlayer(video);
+              } else {
+                openAdModal(video, 'watch');
+              }
+            });
+
+            var dlDone =
+              getAdProgress(video.id, 'download') >= state.downloadAdsRequired;
+            var dlBtn = document.createElement('button');
+            dlBtn.type = 'button';
+            dlBtn.className = dlDone ? 'btn-3d btn-3d-unlocked' : 'btn-3d btn-3d-amber';
+            dlBtn.textContent = dlDone
+              ? 'Download Now'
+              : 'Download - ' + state.downloadAdsRequired + ' Ads';
+            dlBtn.addEventListener('click', function () {
+              if (getAdProgress(video.id, 'download') >= state.downloadAdsRequired) {
+                triggerDownload(video);
+              } else {
+                openAdModal(video, 'download');
+              }
+            });
+
+            actions.appendChild(watchBtn);
+            actions.appendChild(dlBtn);
+
+            body.appendChild(textBlock);
+            body.appendChild(actions);
+
+            card.appendChild(posterStage);
+            card.appendChild(body);
+            container.appendChild(card);
+          });
+        }
+
+        function escapeHtml(str) {
+          return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        }
+
+        // ============================================================
+        // 5. MONETAG AD UNLOCK POPUP (5 Ads Watch / 15 Ads Download)
+        // ============================================================
+        var activeAdState = {
+          video: null,
+          mode: 'watch',
+          busy: false,
+        };
+
+        var adModal = document.getElementById('ad-modal');
+        var adTitleEl = document.getElementById('ad-modal-title');
+        var adMovieEl = document.getElementById('ad-modal-movie');
+        var adCounterEl = document.getElementById('ad-counter-text');
+        var adFillEl = document.getElementById('ad-progress-fill');
+        var adStatusNoteEl = document.getElementById('ad-status-note');
+        var adActionBtn = document.getElementById('ad-action-btn');
+        var adCloseBtn = document.getElementById('ad-modal-close');
+
+        function openAdModal(video, mode) {
+          activeAdState.video = video;
+          activeAdState.mode = mode;
+          activeAdState.busy = false;
+          updateAdModalUI();
+          adModal.classList.add('open');
+        }
+
+        function closeAdModal() {
+          if (activeAdState.busy) return;
+          adModal.classList.remove('open');
+          activeAdState.video = null;
+        }
+
+        function updateAdModalUI() {
+          var video = activeAdState.video;
+          if (!video) return;
+          var mode = activeAdState.mode;
+          var total =
+            mode === 'watch' ? state.watchAdsRequired : state.downloadAdsRequired;
+          var count = Math.min(total, getAdProgress(video.id, mode));
+          var pct = Math.round((count / total) * 100);
+
+          adTitleEl.textContent =
+            mode === 'watch'
+              ? 'Watch Video - ' + total + ' Ads'
+              : 'Download Video - ' + total + ' Ads';
+          adMovieEl.textContent = video.title + ' · ' + video.quality;
+          adCounterEl.textContent = count + '/' + total;
+          adFillEl.style.width = pct + '%';
+
+          if (count >= total) {
+            adActionBtn.className = 'btn-3d btn-3d-unlocked';
+            adActionBtn.disabled = false;
+            adActionBtn.textContent =
+              mode === 'watch' ? 'Unlocked! Play' : 'Unlocked! Download';
+            adStatusNoteEl.textContent =
+              mode === 'watch'
+                ? 'All ' + total + ' ads completed. Click below to start playing.'
+                : 'All ' + total + ' ads completed. Click below to download your movie.';
+          } else {
+            adActionBtn.className = 'btn-3d';
+            adActionBtn.disabled = activeAdState.busy;
+            adActionBtn.textContent = activeAdState.busy
+              ? 'Loading Ad...'
+              : 'Watch Ad';
+            adStatusNoteEl.textContent =
+              'Watch ' +
+              (total - count) +
+              ' more ' +
+              (total - count === 1 ? 'ad' : 'ads') +
+              ' to unlock ' +
+              (mode === 'watch' ? 'playback' : 'download') +
+              '.';
+          }
+        }
+
+        adCloseBtn.addEventListener('click', closeAdModal);
+        adModal.addEventListener('click', function (ev) {
+          if (ev.target === adModal) closeAdModal();
+        });
+
+        adActionBtn.addEventListener('click', function () {
+          var video = activeAdState.video;
+          if (!video || activeAdState.busy) return;
+
+          var mode = activeAdState.mode;
+          var total =
+            mode === 'watch' ? state.watchAdsRequired : state.downloadAdsRequired;
+          var count = getAdProgress(video.id, mode);
+
+          if (count >= total) {
+            adModal.classList.remove('open');
+            activeAdState.video = null;
+            if (mode === 'watch') {
+              openVideoPlayer(video);
+            } else {
+              triggerDownload(video);
+            }
+            return;
+          }
+
+          activeAdState.busy = true;
+          updateAdModalUI();
+
+          Promise.resolve(show_Monetag_Ad())
+            .then(function () {
+              var nextCount = Math.min(total, getAdProgress(video.id, mode) + 1);
+              setAdProgress(video.id, mode, nextCount);
+              activeAdState.busy = false;
+              updateAdModalUI();
+              renderVideos();
+            })
+            .catch(function () {
+              activeAdState.busy = false;
+              adStatusNoteEl.textContent =
+                'Ad was closed before finishing. Please click Watch Ad to try again.';
+              updateAdModalUI();
+            });
+        });
+
+        // ============================================================
+        // 6. IN-APP PLAYER & DOWNLOAD HANDLERS
+        // ============================================================
+        var playerModal = document.getElementById('player-modal');
+        var playerTitleEl = document.getElementById('player-modal-title');
+        var playerMetaEl = document.getElementById('player-modal-meta');
+        var playerFrameEl = document.getElementById('player-frame');
+        var playerTimeEl = document.getElementById('player-time');
+        var playerToggleBtn = document.getElementById('player-toggle-btn');
+        var playerCloseBtn = document.getElementById('player-modal-close');
+
+        var playerRaf = 0;
+        var playerPlaying = true;
+        var playerVideoEl = null;
+
+        function parseDurationSec(dur) {
+          var parts = String(dur || '').split(':');
+          if (parts.length === 2) {
+            var m = parseInt(parts[0], 10);
+            var s = parseInt(parts[1], 10);
+            if (!isNaN(m) && !isNaN(s)) return m * 60 + s;
+          }
+          return 300;
+        }
+
+        function formatSec(sec) {
+          var s = Math.max(0, Math.floor(sec));
+          var m = Math.floor(s / 60);
+          var r = s % 60;
+          return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+        }
+
+        function stopPlayerLoop() {
+          if (playerRaf) {
+            cancelAnimationFrame(playerRaf);
+            playerRaf = 0;
+          }
+          if (playerVideoEl) {
+            try {
+              playerVideoEl.pause();
+            } catch (e) {}
+            playerVideoEl = null;
+          }
+          playerFrameEl.innerHTML = '';
+        }
+
+        function closePlayerModal() {
+          stopPlayerLoop();
+          playerModal.classList.remove('open');
+        }
+
+        function openVideoPlayer(video) {
+          stopPlayerLoop();
+          playerTitleEl.textContent = video.title;
+          playerMetaEl.textContent = video.quality + ' · ' + video.duration;
+          playerPlaying = true;
+          playerToggleBtn.textContent = 'Pause';
+          playerModal.classList.add('open');
+
+          if (window.location.protocol !== 'file:') {
+            fetch('/api/miniapp/view/' + encodeURIComponent(video.id), { method: 'POST' }).catch(
+              function () {}
+            );
+          }
+
+          var isDemo = !video.videoUrl || video.videoUrl.indexOf('demo://') === 0;
+          if (!isDemo) {
+            var vid = document.createElement('video');
+            vid.src = video.videoUrl;
+            vid.poster = video.posterUrl;
+            vid.controls = true;
+            vid.autoplay = true;
+            vid.playsInline = true;
+            vid.addEventListener('timeupdate', function () {
+              playerTimeEl.textContent =
+                formatSec(vid.currentTime) + ' / ' + formatSec(vid.duration || 0);
+            });
+            vid.addEventListener('error', function () {
+              startCinemaCanvas(video);
+            });
+            playerVideoEl = vid;
+            playerFrameEl.appendChild(vid);
+            return;
+          }
+
+          startCinemaCanvas(video);
+        }
+
+        function startCinemaCanvas(video) {
+          playerFrameEl.innerHTML = '';
+          playerVideoEl = null;
+          var canvas = document.createElement('canvas');
+          canvas.width = 960;
+          canvas.height = 540;
+          playerFrameEl.appendChild(canvas);
+
+          var ctx = canvas.getContext('2d');
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = video.posterUrl;
+
+          var totalSec = parseDurationSec(video.duration);
+          var currentSec = 0;
+          var lastTs = performance.now();
+
+          function frame(now) {
+            var dt = (now - lastTs) / 1000;
+            lastTs = now;
+            if (playerPlaying) {
+              currentSec = currentSec + dt >= totalSec ? 0 : currentSec + dt;
+            }
+            playerTimeEl.textContent = formatSec(currentSec) + ' / ' + formatSec(totalSec);
+
+            if (ctx) {
+              ctx.fillStyle = '#000000';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              if (img.complete && img.naturalWidth > 0) {
+                var t = now * 0.0004;
+                var scale = 1.07 + Math.sin(t) * 0.03;
+                var dw = canvas.width * scale;
+                var dh = canvas.height * scale;
+                var dx = Math.sin(t * 0.7) * 14;
+                var dy = Math.cos(t * 0.5) * 8;
+                ctx.drawImage(
+                  img,
+                  (canvas.width - dw) / 2 + dx,
+                  (canvas.height - dh) / 2 + dy,
+                  dw,
+                  dh
+                );
+              }
+
+              var grad = ctx.createRadialGradient(
+                canvas.width / 2,
+                canvas.height / 2,
+                canvas.width * 0.2,
+                canvas.width / 2,
+                canvas.height / 2,
+                canvas.width * 0.72
+              );
+              grad.addColorStop(0, 'rgba(0,0,0,0)');
+              grad.addColorStop(1, 'rgba(0,0,0,0.68)');
+              ctx.fillStyle = grad;
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              if (playerPlaying) {
+                ctx.fillStyle = 'rgba(255, 77, 45, 0.85)';
+                for (var i = 0; i < 24; i++) {
+                  var barH = 5 + Math.abs(Math.sin(now * 0.007 + i * 0.6)) * 18;
+                  ctx.fillRect(24 + i * 8, canvas.height - 20 - barH, 4, barH);
+                }
+              }
+            }
+            playerRaf = requestAnimationFrame(frame);
+          }
+
+          playerRaf = requestAnimationFrame(frame);
+        }
+
+        playerToggleBtn.addEventListener('click', function () {
+          if (playerVideoEl) {
+            if (playerVideoEl.paused) {
+              playerVideoEl.play();
+              playerToggleBtn.textContent = 'Pause';
+            } else {
+              playerVideoEl.pause();
+              playerToggleBtn.textContent = 'Play';
+            }
+            return;
+          }
+          playerPlaying = !playerPlaying;
+          playerToggleBtn.textContent = playerPlaying ? 'Pause' : 'Play';
+        });
+
+        playerCloseBtn.addEventListener('click', closePlayerModal);
+        playerModal.addEventListener('click', function (ev) {
+          if (ev.target === playerModal) closePlayerModal();
+        });
+
+        function triggerDownload(video) {
+          if (window.location.protocol !== 'file:') {
+            fetch('/api/miniapp/download/' + encodeURIComponent(video.id), {
+              method: 'POST',
+            }).catch(function () {});
+          }
+
+          var cleanName = video.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+          if (video.videoUrl && video.videoUrl.indexOf('demo://') !== 0) {
+            var link = document.createElement('a');
+            link.href = video.videoUrl;
+            link.download = cleanName + '.mp4';
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            return;
+          }
+
+          // Generate real downloadable WebM clip for built-in demo movies
+          var canvas = document.createElement('canvas');
+          canvas.width = 1280;
+          canvas.height = 720;
+          var ctx = canvas.getContext('2d');
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = video.posterUrl;
+
+          img.onload = function () {
+            if (typeof MediaRecorder !== 'undefined' && canvas.captureStream) {
+              var stream = canvas.captureStream(30);
+              var mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+                ? 'video/webm;codecs=vp9'
+                : 'video/webm';
+              var rec = new MediaRecorder(stream, { mimeType: mime });
+              var chunks = [];
+              rec.ondataavailable = function (ev) {
+                if (ev.data.size > 0) chunks.push(ev.data);
+              };
+              rec.onstop = function () {
+                var blob = new Blob(chunks, { type: 'video/webm' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = cleanName + '.webm';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              };
+              rec.start();
+              var start = performance.now();
+              function drawClip(now) {
+                var elapsed = now - start;
+                if (ctx) {
+                  ctx.fillStyle = '#000000';
+                  ctx.fillRect(0, 0, canvas.width, canvas.height);
+                  var zoom = 1 + (elapsed / 2000) * 0.05;
+                  var dw = canvas.width * zoom;
+                  var dh = canvas.height * zoom;
+                  ctx.drawImage(img, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+                  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                  ctx.fillRect(0, canvas.height - 84, canvas.width, 84);
+                  ctx.fillStyle = '#ffffff';
+                  ctx.font = 'bold 28px sans-serif';
+                  ctx.fillText(video.title, 36, canvas.height - 44);
+                  ctx.fillStyle = '#ff6d4d';
+                  ctx.font = '18px sans-serif';
+                  ctx.fillText(video.quality + ' · ' + video.duration, 36, canvas.height - 16);
+                }
+                if (elapsed < 1800) {
+                  requestAnimationFrame(drawClip);
+                } else {
+                  rec.stop();
+                }
+              }
+              requestAnimationFrame(drawClip);
+            } else {
+              var fallback = document.createElement('a');
+              fallback.href = video.posterUrl;
+              fallback.download = cleanName + '.jpg';
+              document.body.appendChild(fallback);
+              fallback.click();
+              fallback.remove();
+            }
+          };
+        }
+
+        // Initial render + server sync
+        renderChannels();
+        renderVideos();
+        syncFromServer();
+      })();
+    </script>
   </body>
 </html>
