@@ -237,17 +237,60 @@
           0 6px 12px rgba(21, 128, 61, 0.26);
       }
 
-      /* Channels Grid */
+      /* Full-Screen Force Join Gate */
+      .is-hidden {
+        display: none !important;
+      }
+
+      .gate-shell {
+        min-height: 100dvh;
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 28px 18px 28px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .gate-top {
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+      }
+
+      .gate-card-wrap {
+        padding: 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .gate-heading {
+        margin: 0;
+        text-align: center;
+        font-family: "Montserrat", sans-serif;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.01em;
+      }
+
+      .gate-sub {
+        margin: -6px auto 4px;
+        text-align: center;
+        font-size: 0.84rem;
+        color: var(--text-muted);
+        max-width: 34ch;
+        line-height: 1.45;
+      }
+
+      /* Channels Grid (2 Force-Join Channels) */
       .channels-grid {
         display: grid;
         grid-template-columns: 1fr;
-        gap: 16px;
-      }
-
-      @media (min-width: 768px) {
-        .channels-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
+        gap: 14px;
       }
 
       .channel-card {
@@ -258,21 +301,13 @@
         gap: 14px;
       }
 
-      @media (min-width: 768px) {
-        .channel-card {
-          flex-direction: column;
-          align-items: stretch;
-          gap: 14px;
-        }
-      }
-
       .channel-info {
         min-width: 0;
       }
 
       .channel-name {
         margin: 0;
-        font-size: 0.96rem;
+        font-size: 0.98rem;
         font-weight: 700;
         color: #ffffff;
         white-space: nowrap;
@@ -283,7 +318,7 @@
       .channel-meta {
         margin: 4px 0 0;
         font-size: 0.78rem;
-        color: var(--text-muted);
+        color: #ff9f85;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -291,14 +326,36 @@
 
       .channel-action {
         flex-shrink: 0;
-        min-width: 118px;
+        min-width: 122px;
         padding-bottom: 6px;
       }
 
-      @media (min-width: 768px) {
-        .channel-action {
-          width: 100%;
-        }
+      .gate-footer {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding-bottom: 10px;
+      }
+
+      .gate-alert {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(179, 0, 0, 0.24);
+        border: 1px solid rgba(255, 77, 77, 0.75);
+        color: #ffd4cc;
+        font-size: 0.86rem;
+        font-weight: 700;
+        text-align: center;
+        box-shadow: 0 8px 20px rgba(179, 0, 0, 0.28);
+      }
+
+      .btn-verify-big {
+        min-height: 56px;
+        font-family: "Montserrat", sans-serif;
+        font-size: 1.02rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        border-radius: 16px;
       }
 
       /* Video Grid */
@@ -624,21 +681,40 @@
     </style>
   </head>
   <body>
-    <main class="app-shell">
+    <!-- Full-Screen Force Join Gate (Shown until BOTH channels joined & verified) -->
+    <section id="force-join-gate" class="gate-shell" aria-labelledby="gate-heading">
+      <div class="gate-top">
+        <header class="hero" style="padding-bottom: 8px;">
+          <h1 class="logo-3d">CineVault</h1>
+          <p class="subtitle">Watch Unlimited Movies - No Money Needed</p>
+        </header>
+
+        <div class="card-3d gate-card-wrap">
+          <h2 id="gate-heading" class="gate-heading">Join Both Channels to Enter</h2>
+          <p class="gate-sub">
+            Join both official Telegram channels below, then tap Verify &amp; Enter to unlock all movies.
+          </p>
+          <div id="channels-list" class="channels-grid"></div>
+        </div>
+      </div>
+
+      <div class="gate-footer">
+        <div id="gate-error" class="gate-alert is-hidden" role="alert">
+          Please join both channels first
+        </div>
+        <button id="verify-enter-btn" type="button" class="btn-3d btn-verify-big">
+          Verify &amp; Enter
+        </button>
+      </div>
+    </section>
+
+    <!-- Movies View (Hidden until Force Join Gate is verified) -->
+    <main id="movies-view" class="app-shell is-hidden">
       <!-- Hero Brand -->
       <header class="hero">
         <h1 class="logo-3d">CineVault</h1>
         <p class="subtitle">Watch Unlimited Movies - No Money Needed</p>
       </header>
-
-      <!-- Channels Section -->
-      <section aria-labelledby="channels-heading">
-        <div class="section-head">
-          <h2 id="channels-heading" class="section-title">Official Channels</h2>
-          <span class="section-meta">3 Channels</span>
-        </div>
-        <div id="channels-list" class="channels-grid"></div>
-      </section>
 
       <!-- Video List Section -->
       <section aria-labelledby="videos-heading">
@@ -782,25 +858,18 @@
           downloadAdsRequired: 15,
           channels: [
             {
-              id: 'ch_main',
-              name: 'CineVault Main',
-              handle: '@CineVaultMain',
-              members: '48.2K',
-              url: 'https://t.me/CineVaultMain',
+              id: 'ch_premiumapps',
+              name: 'Premium Apps',
+              handle: '@premiumapps5462',
+              members: '',
+              url: 'https://t.me/premiumapps5462',
             },
             {
-              id: 'ch_nightreel',
-              name: 'NightReel',
-              handle: '@NightReelReleases',
-              members: '21.9K',
-              url: 'https://t.me/NightReelReleases',
-            },
-            {
-              id: 'ch_vault',
-              name: 'Vault Updates',
-              handle: '@VaultUpdatesBD',
-              members: '14.5K',
-              url: 'https://t.me/VaultUpdatesBD',
+              id: 'ch_waincome',
+              name: 'WA Income Site',
+              handle: '@waincomesite',
+              members: '',
+              url: 'https://t.me/waincomesite',
             },
           ],
           videos: [
@@ -839,6 +908,7 @@
           ],
           adProgress: loadSavedProgress(),
           joinedChannels: loadJoinedChannels(),
+          gateVerified: loadGateVerified(),
         };
 
         function storageKey(suffix) {
@@ -862,7 +932,7 @@
 
         function loadJoinedChannels() {
           try {
-            var raw = localStorage.getItem(storageKey('joined'));
+            var raw = localStorage.getItem(storageKey('joined_v2'));
             return raw ? JSON.parse(raw) : {};
           } catch (e) {
             return {};
@@ -871,9 +941,70 @@
 
         function saveJoinedChannels() {
           try {
-            localStorage.setItem(storageKey('joined'), JSON.stringify(state.joinedChannels));
+            localStorage.setItem(storageKey('joined_v2'), JSON.stringify(state.joinedChannels));
           } catch (e) {}
         }
+
+        function loadGateVerified() {
+          try {
+            return localStorage.getItem(storageKey('gate_verified_v2')) === 'true';
+          } catch (e) {
+            return false;
+          }
+        }
+
+        function saveGateVerified(val) {
+          state.gateVerified = Boolean(val);
+          try {
+            localStorage.setItem(storageKey('gate_verified_v2'), val ? 'true' : 'false');
+          } catch (e) {}
+        }
+
+        function areAllChannelsJoined() {
+          if (!state.channels || state.channels.length === 0) return false;
+          return state.channels.every(function (ch) {
+            return Boolean(state.joinedChannels[ch.id]);
+          });
+        }
+
+        var forceJoinGateEl = document.getElementById('force-join-gate');
+        var moviesViewEl = document.getElementById('movies-view');
+        var gateErrorEl = document.getElementById('gate-error');
+        var verifyEnterBtn = document.getElementById('verify-enter-btn');
+
+        function updateGateVisibility() {
+          var unlocked = state.gateVerified && areAllChannelsJoined();
+          if (!unlocked && state.gateVerified) {
+            saveGateVerified(false);
+          }
+          if (unlocked) {
+            forceJoinGateEl.classList.add('is-hidden');
+            moviesViewEl.classList.remove('is-hidden');
+            gateErrorEl.classList.add('is-hidden');
+          } else {
+            forceJoinGateEl.classList.remove('is-hidden');
+            moviesViewEl.classList.add('is-hidden');
+          }
+        }
+
+        function showGateAlert(msg) {
+          gateErrorEl.textContent = msg;
+          gateErrorEl.classList.remove('is-hidden');
+          if (tg && typeof tg.showAlert === 'function') {
+            try {
+              tg.showAlert(msg);
+            } catch (e) {}
+          }
+        }
+
+        verifyEnterBtn.addEventListener('click', function () {
+          if (!areAllChannelsJoined()) {
+            showGateAlert('Please join both channels first');
+            return;
+          }
+          saveGateVerified(true);
+          updateGateVisibility();
+        });
 
         // Optional sync with backend when running inside the hosted app
         function syncFromServer() {
@@ -901,18 +1032,9 @@
               }
               renderChannels();
               renderVideos();
+              updateGateVisibility();
             })
             .catch(function () {});
-        }
-
-        function openTelegramChannel(url) {
-          if (tg && typeof tg.openTelegramLink === 'function' && url.indexOf('https://t.me/') === 0) {
-            try {
-              tg.openTelegramLink(url);
-              return;
-            } catch (e) {}
-          }
-          window.open(url, '_blank', 'noopener,noreferrer');
         }
 
         // ============================================================
@@ -944,18 +1066,30 @@
             actionWrap.className = 'channel-action';
 
             var isJoined = Boolean(state.joinedChannels[ch.id]);
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = isJoined ? 'btn-3d btn-3d-unlocked' : 'btn-3d';
-            btn.textContent = isJoined ? 'Joined' : 'Join Channel';
-            btn.addEventListener('click', function () {
-              openTelegramChannel(ch.url);
+            var link = document.createElement('a');
+            link.href = ch.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.className = isJoined ? 'btn-3d btn-3d-unlocked' : 'btn-3d';
+            link.textContent = isJoined ? 'Joined ✓' : 'Join Channel';
+            link.addEventListener('click', function (ev) {
+              if (
+                tg &&
+                typeof tg.openTelegramLink === 'function' &&
+                ch.url.indexOf('https://t.me/') === 0
+              ) {
+                try {
+                  ev.preventDefault();
+                  tg.openTelegramLink(ch.url);
+                } catch (e) {}
+              }
               state.joinedChannels[ch.id] = true;
               saveJoinedChannels();
+              gateErrorEl.classList.add('is-hidden');
               renderChannels();
             });
 
-            actionWrap.appendChild(btn);
+            actionWrap.appendChild(link);
             card.appendChild(info);
             card.appendChild(actionWrap);
             container.appendChild(card);
@@ -1496,9 +1630,10 @@
           };
         }
 
-        // Initial render + server sync
+        // Initial render + gate check + server sync
         renderChannels();
         renderVideos();
+        updateGateVisibility();
         syncFromServer();
       })();
     </script>
