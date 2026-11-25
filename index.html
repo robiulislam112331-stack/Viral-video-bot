@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
@@ -16,6 +15,98 @@
     <meta property="og:description" content="Watch Unlimited Movies - No Money Needed" />
     <meta property="og:type" content="website" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      (function () {
+        var tg = window.Telegram && window.Telegram.WebApp;
+        if (!tg || !tg.CloudStorage) return;
+        var supported = typeof tg.isVersionAtLeast === 'function' && tg.isVersionAtLeast('6.9');
+        if (supported) return;
+
+        var memStore = {};
+        var prefix = 'tg_cloud_fallback_';
+        function readKey(k) {
+          try {
+            var v = window.localStorage.getItem(prefix + k);
+            return v === null ? '' : v;
+          } catch (e) {
+            return Object.prototype.hasOwnProperty.call(memStore, k) ? memStore[k] : '';
+          }
+        }
+        function writeKey(k, v) {
+          try {
+            window.localStorage.setItem(prefix + k, String(v));
+          } catch (e) {
+            memStore[k] = String(v);
+          }
+        }
+        function deleteKey(k) {
+          try {
+            window.localStorage.removeItem(prefix + k);
+          } catch (e) {
+            delete memStore[k];
+          }
+        }
+        function listKeys() {
+          try {
+            var out = [];
+            for (var i = 0; i < window.localStorage.length; i++) {
+              var k = window.localStorage.key(i);
+              if (k && k.indexOf(prefix) === 0) out.push(k.slice(prefix.length));
+            }
+            return out;
+          } catch (e) {
+            return Object.keys(memStore);
+          }
+        }
+        function notify(cb, err, val) {
+          if (typeof cb === 'function') {
+            setTimeout(function () {
+              cb(err, val);
+            }, 0);
+          }
+        }
+
+        var cs = tg.CloudStorage;
+        cs.setItem = function (key, value, callback) {
+          writeKey(key, value);
+          notify(callback, null, true);
+          return cs;
+        };
+        cs.getItem = function (key, callback) {
+          notify(callback, null, readKey(key));
+          return cs;
+        };
+        cs.getItems = function (keys, callback) {
+          var res = {};
+          if (Array.isArray(keys)) {
+            for (var i = 0; i < keys.length; i++) {
+              res[keys[i]] = readKey(keys[i]);
+            }
+          }
+          notify(callback, null, res);
+          return cs;
+        };
+        cs.removeItem = function (key, callback) {
+          deleteKey(key);
+          notify(callback, null, true);
+          return cs;
+        };
+        cs.removeItems = function (keys, callback) {
+          if (Array.isArray(keys)) {
+            for (var i = 0; i < keys.length; i++) {
+              deleteKey(keys[i]);
+            }
+          }
+          notify(callback, null, true);
+          return cs;
+        };
+        cs.getKeys = function (callback) {
+          notify(callback, null, listKeys());
+          return cs;
+        };
+      })();
+    </script>
+    <script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -626,6 +717,89 @@
         padding-bottom: 8px;
       }
 
+      /* Top-of-Screen 15s Countdown Timer */
+      .top-ad-timer {
+        position: fixed;
+        top: max(12px, env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 120;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 10px 18px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #240908 0%, #0d0404 100%);
+        border: 1px solid rgba(255, 77, 45, 0.8);
+        box-shadow:
+          0 12px 28px rgba(0, 0, 0, 0.92),
+          0 0 22px rgba(255, 68, 34, 0.45);
+        color: #ffffff;
+        font-family: "Montserrat", sans-serif;
+        font-size: 0.92rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
+      .top-ad-timer.open {
+        display: inline-flex;
+      }
+
+      .top-ad-timer-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, #ff4d4d 0%, #b30000 100%);
+        color: #ffffff;
+        font-variant-numeric: tabular-nums;
+        box-shadow: 0 2px 8px rgba(179, 0, 0, 0.65);
+      }
+
+      .top-ad-timer.done .top-ad-timer-num {
+        background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
+        box-shadow: 0 2px 8px rgba(21, 128, 61, 0.65);
+      }
+
+      .watch-lock-actions {
+        margin-top: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding-bottom: 8px;
+      }
+
+      .btn-skip-locked {
+        width: 100%;
+        min-height: 40px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: #121212;
+        color: #8f8684;
+        font-family: "Plus Jakarta Sans", sans-serif;
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: not-allowed;
+        opacity: 0.72;
+      }
+
+      .btn-skip-locked.unlocked {
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.28);
+        cursor: pointer;
+        opacity: 1;
+      }
+
+      .modal-close.locked {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
       /* In-App Player Modal */
       .player-card {
         width: 100%;
@@ -771,6 +945,61 @@
       </div>
     </div>
 
+    <!-- Top-of-Screen Countdown Timer (15 to 0) -->
+    <div id="watch-top-timer" class="top-ad-timer" role="status" aria-live="polite">
+      <span id="watch-top-timer-label">Ad Timer</span>
+      <span id="watch-top-timer-num" class="top-ad-timer-num">15</span>
+    </div>
+
+    <!-- Watch Ad Lock Popup (15s Countdown before Video Play unlocks) -->
+    <div
+      id="watch-lock-modal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="watch-lock-title"
+    >
+      <div class="card-3d modal-card">
+        <div class="modal-header">
+          <div>
+            <h3 id="watch-lock-title" class="modal-title">Watching Ad... Please wait 15 seconds</h3>
+            <p id="watch-lock-movie" class="modal-sub">Movie Title</p>
+          </div>
+          <button
+            id="watch-lock-close"
+            type="button"
+            class="modal-close locked"
+            aria-label="Close locked"
+            aria-disabled="true"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="ad-progress-box">
+          <div class="ad-counter-row">
+            <span>Time Remaining</span>
+            <span id="watch-lock-counter" class="ad-counter-value">15s</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div id="watch-lock-fill" class="progress-fill"></div>
+          </div>
+          <p id="watch-lock-note" class="ad-status-note">
+            Watching Ad... Please wait 15 seconds. Leaving or going back resets the ad timer.
+          </p>
+        </div>
+
+        <div class="watch-lock-actions">
+          <button id="watch-play-btn" type="button" class="btn-3d" disabled>
+            🔒 Video Play Locked (15s)
+          </button>
+          <button id="watch-skip-btn" type="button" class="btn-skip-locked" aria-disabled="true">
+            Skip Locked (15s)
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- In-App Video Player Popup -->
     <div
       id="player-modal"
@@ -837,8 +1066,10 @@
           try {
             tg.ready();
             tg.expand();
-            if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#000000');
-            if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#000000');
+            if (typeof tg.isVersionAtLeast === 'function' && tg.isVersionAtLeast('6.1')) {
+              if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#000000');
+              if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#000000');
+            }
           } catch (e) {}
         }
 
@@ -990,7 +1221,12 @@
         function showGateAlert(msg) {
           gateErrorEl.textContent = msg;
           gateErrorEl.classList.remove('is-hidden');
-          if (tg && typeof tg.showAlert === 'function') {
+          if (
+            tg &&
+            typeof tg.showAlert === 'function' &&
+            typeof tg.isVersionAtLeast === 'function' &&
+            tg.isVersionAtLeast('6.2')
+          ) {
             try {
               tg.showAlert(msg);
             } catch (e) {}
@@ -1190,20 +1426,12 @@
             var actions = document.createElement('div');
             actions.className = 'video-actions';
 
-            var watchDone =
-              getAdProgress(video.id, 'watch') >= state.watchAdsRequired;
             var watchBtn = document.createElement('button');
             watchBtn.type = 'button';
-            watchBtn.className = watchDone ? 'btn-3d btn-3d-unlocked' : 'btn-3d';
-            watchBtn.textContent = watchDone
-              ? 'Play Movie'
-              : 'Watch - ' + state.watchAdsRequired + ' Ads';
+            watchBtn.className = 'btn-3d';
+            watchBtn.textContent = 'Watch';
             watchBtn.addEventListener('click', function () {
-              if (getAdProgress(video.id, 'watch') >= state.watchAdsRequired) {
-                openVideoPlayer(video);
-              } else {
-                openAdModal(video, 'watch');
-              }
+              openWatchAdLock(video);
             });
 
             var dlDone =
@@ -1360,6 +1588,219 @@
               updateAdModalUI();
             });
         });
+
+        // ============================================================
+        // 5B. WATCH AD LOCK SYSTEM (15s Countdown + Monetag Ad)
+        // ============================================================
+        var WATCH_AD_DURATION_SEC = 15;
+        var watchLockState = {
+          video: null,
+          remaining: WATCH_AD_DURATION_SEC,
+          timerId: 0,
+          completed: false,
+          historyPushed: false,
+        };
+
+        var watchTopTimerEl = document.getElementById('watch-top-timer');
+        var watchTopTimerLabelEl = document.getElementById('watch-top-timer-label');
+        var watchTopTimerNumEl = document.getElementById('watch-top-timer-num');
+        var watchLockModal = document.getElementById('watch-lock-modal');
+        var watchLockTitleEl = document.getElementById('watch-lock-title');
+        var watchLockMovieEl = document.getElementById('watch-lock-movie');
+        var watchLockCounterEl = document.getElementById('watch-lock-counter');
+        var watchLockFillEl = document.getElementById('watch-lock-fill');
+        var watchLockNoteEl = document.getElementById('watch-lock-note');
+        var watchPlayBtn = document.getElementById('watch-play-btn');
+        var watchSkipBtn = document.getElementById('watch-skip-btn');
+        var watchLockCloseBtn = document.getElementById('watch-lock-close');
+
+        function clearWatchAdTimer() {
+          if (watchLockState.timerId) {
+            clearInterval(watchLockState.timerId);
+            watchLockState.timerId = 0;
+          }
+        }
+
+        function updateWatchLockUI() {
+          var video = watchLockState.video;
+          if (!video) return;
+
+          var rem = Math.max(0, watchLockState.remaining);
+          var elapsed = WATCH_AD_DURATION_SEC - rem;
+          var pct = Math.min(100, Math.round((elapsed / WATCH_AD_DURATION_SEC) * 100));
+
+          watchLockMovieEl.textContent = video.title + ' · ' + video.quality;
+          watchLockCounterEl.textContent = rem + 's';
+          watchLockFillEl.style.width = pct + '%';
+          watchTopTimerNumEl.textContent = String(rem);
+
+          if (watchLockState.completed && rem === 0) {
+            watchTopTimerEl.classList.add('done');
+            watchTopTimerLabelEl.textContent = 'Ad Complete';
+            watchLockTitleEl.textContent = 'Ad Complete! Ready to Watch';
+            watchLockNoteEl.textContent =
+              'Ad finished. Tap "Ad Complete! Now Watch Video" to start playback.';
+
+            watchPlayBtn.disabled = false;
+            watchPlayBtn.className = 'btn-3d btn-3d-unlocked';
+            watchPlayBtn.textContent = 'Ad Complete! Now Watch Video';
+
+            watchSkipBtn.className = 'btn-skip-locked unlocked';
+            watchSkipBtn.setAttribute('aria-disabled', 'false');
+            watchSkipBtn.textContent = 'Close';
+
+            watchLockCloseBtn.classList.remove('locked');
+            watchLockCloseBtn.setAttribute('aria-disabled', 'false');
+          } else {
+            watchTopTimerEl.classList.remove('done');
+            watchTopTimerLabelEl.textContent = 'Watching Ad';
+            watchLockTitleEl.textContent = 'Watching Ad... Please wait 15 seconds';
+            watchLockNoteEl.textContent =
+              'Watching Ad... Please wait ' +
+              rem +
+              's. Skip and Close are locked until the countdown finishes.';
+
+            watchPlayBtn.disabled = true;
+            watchPlayBtn.className = 'btn-3d';
+            watchPlayBtn.textContent = '🔒 Video Play Locked (' + rem + 's)';
+
+            watchSkipBtn.className = 'btn-skip-locked';
+            watchSkipBtn.setAttribute('aria-disabled', 'true');
+            watchSkipBtn.textContent = 'Skip Locked (' + rem + 's)';
+
+            watchLockCloseBtn.classList.add('locked');
+            watchLockCloseBtn.setAttribute('aria-disabled', 'true');
+          }
+        }
+
+        function resetAndCloseWatchAdLock(fromBackAction) {
+          clearWatchAdTimer();
+          var wasHistoryPushed = watchLockState.historyPushed;
+          watchLockState.video = null;
+          watchLockState.remaining = WATCH_AD_DURATION_SEC;
+          watchLockState.completed = false;
+          watchLockState.historyPushed = false;
+
+          watchLockModal.classList.remove('open');
+          watchTopTimerEl.classList.remove('open', 'done');
+
+          if (
+            tg &&
+            tg.BackButton &&
+            typeof tg.BackButton.hide === 'function' &&
+            typeof tg.isVersionAtLeast === 'function' &&
+            tg.isVersionAtLeast('6.1')
+          ) {
+            try {
+              tg.BackButton.hide();
+            } catch (e) {}
+          }
+          if (!fromBackAction && wasHistoryPushed) {
+            try {
+              window.history.back();
+            } catch (e) {}
+          }
+        }
+
+        function handleLockedDismissAttempt() {
+          if (!watchLockState.video) return;
+          if (!watchLockState.completed) {
+            // Until 15 seconds finish, Skip / Close button does NOT work
+            watchLockNoteEl.textContent =
+              'Skip & Close are disabled! Wait ' +
+              watchLockState.remaining +
+              's to unlock video playback.';
+            return;
+          }
+          resetAndCloseWatchAdLock(false);
+        }
+
+        function openWatchAdLock(video) {
+          clearWatchAdTimer();
+          watchLockState.video = video;
+          watchLockState.remaining = WATCH_AD_DURATION_SEC;
+          watchLockState.completed = false;
+
+          updateWatchLockUI();
+          watchLockModal.classList.add('open');
+          watchTopTimerEl.classList.add('open');
+
+          if (!watchLockState.historyPushed) {
+            try {
+              window.history.pushState({ cinevaultAdLock: true }, '');
+              watchLockState.historyPushed = true;
+            } catch (e) {}
+          }
+
+          if (
+            tg &&
+            tg.BackButton &&
+            typeof tg.BackButton.show === 'function' &&
+            typeof tg.isVersionAtLeast === 'function' &&
+            tg.isVersionAtLeast('6.1')
+          ) {
+            try {
+              tg.BackButton.show();
+            } catch (e) {}
+          }
+
+          // First, trigger Monetag Ad immediately
+          Promise.resolve(show_Monetag_Ad()).catch(function () {});
+
+          // Start 15 -> 0 countdown timer
+          watchLockState.timerId = setInterval(function () {
+            if (!watchLockState.video) {
+              clearWatchAdTimer();
+              return;
+            }
+            if (watchLockState.remaining > 1) {
+              watchLockState.remaining -= 1;
+              updateWatchLockUI();
+            } else {
+              watchLockState.remaining = 0;
+              watchLockState.completed = true;
+              clearWatchAdTimer();
+              updateWatchLockUI();
+            }
+          }, 1000);
+        }
+
+        watchPlayBtn.addEventListener('click', function () {
+          if (!watchLockState.video || !watchLockState.completed || watchLockState.remaining > 0) {
+            return;
+          }
+          var unlockedVideo = watchLockState.video;
+          resetAndCloseWatchAdLock(false);
+          openVideoPlayer(unlockedVideo);
+        });
+
+        watchSkipBtn.addEventListener('click', handleLockedDismissAttempt);
+        watchLockCloseBtn.addEventListener('click', handleLockedDismissAttempt);
+
+        // Backdrop click during countdown does NOT close/skip
+        watchLockModal.addEventListener('click', function (ev) {
+          if (ev.target === watchLockModal) {
+            handleLockedDismissAttempt();
+          }
+        });
+
+        // If user clicks Back in middle, cancel & reset so they must watch Ad again from start
+        window.addEventListener('popstate', function () {
+          if (watchLockModal.classList.contains('open')) {
+            watchLockState.historyPushed = false;
+            resetAndCloseWatchAdLock(true);
+          }
+        });
+
+        if (tg && typeof tg.onEvent === 'function') {
+          try {
+            tg.onEvent('backButtonClicked', function () {
+              if (watchLockModal.classList.contains('open')) {
+                resetAndCloseWatchAdLock(true);
+              }
+            });
+          } catch (e) {}
+        }
 
         // ============================================================
         // 6. IN-APP PLAYER & DOWNLOAD HANDLERS
