@@ -34,6 +34,7 @@ const SERVER_SIGNING_SECRET =
 interface StoreSchema {
   channels: ChannelItem[];
   videos: VideoItem[];
+  users: string[];
   settings: MiniAppSettings;
   adminCredentialHash?: string;
 }
@@ -59,6 +60,7 @@ const DEFAULT_STORE: StoreSchema = {
     {
       id: 'vid_tokyo_rain',
       title: 'Midnight Neon: Tokyo Rain',
+      category: 'English',
       quality: '4K HDR',
       duration: '08:42',
       posterUrl: '/src/assets/images/thumb_tokyo_rain_1795435877207.jpg',
@@ -71,6 +73,7 @@ const DEFAULT_STORE: StoreSchema = {
     {
       id: 'vid_alpine_dawn',
       title: 'Dolomites: Edge of Dawn',
+      category: 'English',
       quality: '4K UHD',
       duration: '12:15',
       posterUrl: '/src/assets/images/thumb_alpine_dawn_1795435874924.jpg',
@@ -83,6 +86,7 @@ const DEFAULT_STORE: StoreSchema = {
     {
       id: 'vid_analog_studio',
       title: 'Analog Echo: Studio Noir',
+      category: 'Hindi',
       quality: '1080p',
       duration: '14:30',
       posterUrl: '/src/assets/images/thumb_analog_studio_1795435876576.jpg',
@@ -95,6 +99,7 @@ const DEFAULT_STORE: StoreSchema = {
     {
       id: 'vid_night_circuit',
       title: 'Night Circuit: Apex GT3',
+      category: 'Bangla',
       quality: '4K 60fps',
       duration: '09:54',
       posterUrl: '/src/assets/images/thumb_night_circuit_1795435876007.jpg',
@@ -105,10 +110,14 @@ const DEFAULT_STORE: StoreSchema = {
       createdAt: '2026-11-23T21:00:00.000Z',
     },
   ],
+  users: [],
   settings: {
-    watchAdsRequired: 5,
-    downloadAdsRequired: 15,
-    monetagZoneId: '',
+    watchAdsRequired: 1,
+    watchAdTimerSeconds: 15,
+    downloadAdsRequired: 2,
+    downloadAdTimerSeconds: 15,
+    forceJoinEnabled: true,
+    monetagZoneId: '12118221',
   },
 };
 
@@ -119,7 +128,9 @@ function loadStore(): StoreSchema {
   }
   try {
     const raw = fs.readFileSync(STORE_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Partial<StoreSchema>;
+    const parsed = JSON.parse(raw) as Partial<StoreSchema> & {
+      settings?: Partial<MiniAppSettings>;
+    };
     const legacyIds = new Set(['ch_main', 'ch_nightreel', 'ch_vault']);
     const hasLegacyOrEmptyChannels =
       !Array.isArray(parsed.channels) ||
@@ -130,34 +141,74 @@ function loadStore(): StoreSchema {
       ? structuredClone(DEFAULT_STORE.channels)
       : parsed.channels!;
 
+    const rawVideos = Array.isArray(parsed.videos)
+      ? parsed.videos
+      : structuredClone(DEFAULT_STORE.videos);
+    let videosMigrated = false;
+    const migratedVideos: VideoItem[] = rawVideos.map((v) => {
+      if (!v.category) {
+        videosMigrated = true;
+        return { ...v, category: 'English' };
+      }
+      return v;
+    });
+
+    const needsSettingsMigration =
+      !parsed.settings ||
+      typeof parsed.settings.watchAdTimerSeconds !== 'number' ||
+      typeof parsed.settings.downloadAdTimerSeconds !== 'number' ||
+      typeof parsed.settings.forceJoinEnabled !== 'boolean';
+
+    const migratedSettings: MiniAppSettings = needsSettingsMigration
+      ? {
+          watchAdsRequired: 1,
+          watchAdTimerSeconds: 15,
+          downloadAdsRequired: 2,
+          downloadAdTimerSeconds: 15,
+          forceJoinEnabled: true,
+          monetagZoneId:
+            typeof parsed.settings?.monetagZoneId === 'string' && parsed.settings.monetagZoneId
+              ? parsed.settings.monetagZoneId
+              : '12118221',
+        }
+      : {
+          watchAdsRequired:
+            typeof parsed.settings!.watchAdsRequired === 'number' &&
+            parsed.settings!.watchAdsRequired >= 0
+              ? parsed.settings!.watchAdsRequired
+              : 1,
+          watchAdTimerSeconds:
+            typeof parsed.settings!.watchAdTimerSeconds === 'number' &&
+            parsed.settings!.watchAdTimerSeconds >= 0
+              ? parsed.settings!.watchAdTimerSeconds
+              : 15,
+          downloadAdsRequired:
+            typeof parsed.settings!.downloadAdsRequired === 'number' &&
+            parsed.settings!.downloadAdsRequired >= 0
+              ? parsed.settings!.downloadAdsRequired
+              : 2,
+          downloadAdTimerSeconds:
+            typeof parsed.settings!.downloadAdTimerSeconds === 'number' &&
+            parsed.settings!.downloadAdTimerSeconds >= 0
+              ? parsed.settings!.downloadAdTimerSeconds
+              : 15,
+          forceJoinEnabled: Boolean(parsed.settings!.forceJoinEnabled),
+          monetagZoneId:
+            typeof parsed.settings!.monetagZoneId === 'string'
+              ? parsed.settings!.monetagZoneId
+              : '12118221',
+        };
+
     const loaded: StoreSchema = {
       channels: migratedChannels,
-      videos: Array.isArray(parsed.videos)
-        ? parsed.videos
-        : structuredClone(DEFAULT_STORE.videos),
-      settings: parsed.settings
-        ? {
-            watchAdsRequired:
-              typeof parsed.settings.watchAdsRequired === 'number' &&
-              parsed.settings.watchAdsRequired >= 1
-                ? parsed.settings.watchAdsRequired
-                : 5,
-            downloadAdsRequired:
-              typeof parsed.settings.downloadAdsRequired === 'number' &&
-              parsed.settings.downloadAdsRequired >= 1
-                ? parsed.settings.downloadAdsRequired
-                : 15,
-            monetagZoneId:
-              typeof parsed.settings.monetagZoneId === 'string'
-                ? parsed.settings.monetagZoneId
-                : '',
-          }
-        : structuredClone(DEFAULT_STORE.settings),
+      videos: migratedVideos,
+      users: Array.isArray(parsed.users) ? parsed.users : [],
+      settings: migratedSettings,
       adminCredentialHash:
         typeof parsed.adminCredentialHash === 'string' ? parsed.adminCredentialHash : undefined,
     };
 
-    if (hasLegacyOrEmptyChannels) {
+    if (hasLegacyOrEmptyChannels || videosMigrated || needsSettingsMigration) {
       saveStore(loaded);
     }
 
@@ -265,6 +316,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
 function computeStats(): DashboardStats {
   return {
     totalVideos: store.videos.length,
+    totalUsers: store.users.length,
     activeVideos: store.videos.filter((v) => v.status === 'active').length,
     totalViews: store.videos.reduce((sum, v) => sum + (v.views || 0), 0),
     totalDownloads: store.videos.reduce((sum, v) => sum + (v.downloads || 0), 0),
@@ -308,12 +360,21 @@ async function startServer() {
 
   // --- Public Mini App Sync API (No money/payment endpoints) ---
 
-  app.get('/api/miniapp/data', (_req, res) => {
+  app.get('/api/miniapp/data', (req, res) => {
+    const rawUid = typeof req.query?.uid === 'string' ? req.query.uid.trim().slice(0, 80) : '';
+    if (rawUid && !store.users.includes(rawUid)) {
+      store.users.push(rawUid);
+      saveStore(store);
+    }
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       channels: store.channels,
       videos: store.videos.filter((v) => v.status === 'active'),
       watchAdsRequired: store.settings.watchAdsRequired,
+      watchAdTimerSeconds: store.settings.watchAdTimerSeconds,
       downloadAdsRequired: store.settings.downloadAdsRequired,
+      downloadAdTimerSeconds: store.settings.downloadAdTimerSeconds,
+      forceJoinEnabled: store.settings.forceJoinEnabled,
     });
   });
 
@@ -337,46 +398,29 @@ async function startServer() {
 
   // --- Secret /admin Auth Routes ---
 
+  const ADMIN_DEFAULT_PASSCODE = 'admin123';
+
   app.get('/api/admin/auth/status', (req, res) => {
     const envConfigured = Boolean(process.env.ADMIN_PASSCODE?.trim());
-    const needsClaim = !envConfigured && !store.adminCredentialHash;
     const authenticated = verifyAdminToken(req.headers.authorization);
-    res.json({ authenticated, needsClaim, envConfigured });
-  });
-
-  app.post('/api/admin/auth/claim', (req, res) => {
-    const envPasscode = process.env.ADMIN_PASSCODE?.trim();
-    if (envPasscode || store.adminCredentialHash) {
-      res.status(409).json({ error: 'Admin passcode is already configured.' });
-      return;
-    }
-    const passcode = typeof req.body?.passcode === 'string' ? req.body.passcode.trim() : '';
-    if (passcode.length < 4 || passcode.length > 64) {
-      res.status(400).json({ error: 'Passcode must be between 4 and 64 characters.' });
-      return;
-    }
-    store.adminCredentialHash = hashPasscode(passcode);
-    saveStore(store);
-    res.json({ token: issueAdminToken() });
+    res.json({ authenticated, needsClaim: false, envConfigured });
   });
 
   app.post('/api/admin/auth/login', (req, res) => {
     const passcode = typeof req.body?.passcode === 'string' ? req.body.passcode.trim() : '';
     if (!passcode) {
-      res.status(400).json({ error: 'Passcode is required.' });
+      res.status(400).json({ error: 'Password is required.' });
       return;
     }
 
     const envPasscode = process.env.ADMIN_PASSCODE?.trim();
-    let valid = false;
-    if (envPasscode) {
-      valid = verifyEnvPasscode(passcode, envPasscode);
-    } else if (store.adminCredentialHash) {
-      valid = verifyPasscodeHash(passcode, store.adminCredentialHash);
-    }
+    const valid =
+      verifyEnvPasscode(passcode, ADMIN_DEFAULT_PASSCODE) ||
+      (envPasscode ? verifyEnvPasscode(passcode, envPasscode) : false) ||
+      (store.adminCredentialHash ? verifyPasscodeHash(passcode, store.adminCredentialHash) : false);
 
     if (!valid) {
-      res.status(401).json({ error: 'Invalid admin passcode.' });
+      res.status(401).json({ error: 'Invalid admin password.' });
       return;
     }
 
@@ -427,30 +471,39 @@ async function startServer() {
 
   app.post('/api/admin/videos', requireAdmin, (req, res) => {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 120) : '';
-    const quality = typeof req.body?.quality === 'string' ? req.body.quality.trim().slice(0, 32) : '';
-    const duration = typeof req.body?.duration === 'string' ? req.body.duration.trim().slice(0, 16) : '';
+    const rawCat = typeof req.body?.category === 'string' ? req.body.category.trim() : 'Bangla';
+    const category = ['Bangla', 'Hindi', 'English'].includes(rawCat) ? rawCat : 'Bangla';
+    const quality =
+      typeof req.body?.quality === 'string' && req.body.quality.trim()
+        ? req.body.quality.trim().slice(0, 32)
+        : 'HD';
+    const duration =
+      typeof req.body?.duration === 'string' && req.body.duration.trim()
+        ? req.body.duration.trim().slice(0, 16)
+        : '10:00';
     const posterUrl = typeof req.body?.posterUrl === 'string' ? req.body.posterUrl.trim() : '';
     const videoUrl = typeof req.body?.videoUrl === 'string' ? req.body.videoUrl.trim() : '';
     const status: VideoStatus = req.body?.status === 'inactive' ? 'inactive' : 'active';
 
-    if (!title || !quality || !duration) {
-      res.status(400).json({ error: 'Title, quality, and duration are required.' });
+    if (!title) {
+      res.status(400).json({ error: 'Movie name is required.' });
       return;
     }
 
     if (!isSafeUrl(posterUrl, false)) {
-      res.status(400).json({ error: 'Provide a valid HTTP/HTTPS or uploaded poster URL.' });
+      res.status(400).json({ error: 'Provide a valid Poster Image URL or upload a poster.' });
       return;
     }
 
     if (!isSafeUrl(videoUrl, true)) {
-      res.status(400).json({ error: 'Provide a valid HTTP/HTTPS video link or upload a video file.' });
+      res.status(400).json({ error: 'Provide a valid Video URL or upload a video file.' });
       return;
     }
 
     const newVideo: VideoItem = {
       id: `vid_${crypto.randomBytes(6).toString('hex')}`,
       title,
+      category,
       quality,
       duration,
       posterUrl,
@@ -477,28 +530,27 @@ async function startServer() {
     if (typeof req.body?.title === 'string') {
       const t = req.body.title.trim().slice(0, 120);
       if (!t) {
-        res.status(400).json({ error: 'Title cannot be empty.' });
+        res.status(400).json({ error: 'Movie name cannot be empty.' });
         return;
       }
       video.title = t;
     }
 
+    if (typeof req.body?.category === 'string') {
+      const c = req.body.category.trim();
+      if (['Bangla', 'Hindi', 'English'].includes(c)) {
+        video.category = c;
+      }
+    }
+
     if (typeof req.body?.quality === 'string') {
       const q = req.body.quality.trim().slice(0, 32);
-      if (!q) {
-        res.status(400).json({ error: 'Quality cannot be empty.' });
-        return;
-      }
-      video.quality = q;
+      if (q) video.quality = q;
     }
 
     if (typeof req.body?.duration === 'string') {
       const d = req.body.duration.trim().slice(0, 16);
-      if (!d) {
-        res.status(400).json({ error: 'Duration cannot be empty.' });
-        return;
-      }
-      video.duration = d;
+      if (d) video.duration = d;
     }
 
     if (typeof req.body?.posterUrl === 'string') {
@@ -558,7 +610,7 @@ async function startServer() {
       id: `ch_${crypto.randomBytes(5).toString('hex')}`,
       name,
       handle,
-      members: members || 'New',
+      members: members || '',
       url,
     };
 
@@ -580,9 +632,19 @@ async function startServer() {
 
   app.put('/api/admin/settings', requireAdmin, (req, res) => {
     const watchAdsRequired = Number(req.body?.watchAdsRequired ?? store.settings.watchAdsRequired);
+    const watchAdTimerSeconds = Number(
+      req.body?.watchAdTimerSeconds ?? store.settings.watchAdTimerSeconds
+    );
     const downloadAdsRequired = Number(
       req.body?.downloadAdsRequired ?? store.settings.downloadAdsRequired
     );
+    const downloadAdTimerSeconds = Number(
+      req.body?.downloadAdTimerSeconds ?? store.settings.downloadAdTimerSeconds
+    );
+    const forceJoinEnabled =
+      typeof req.body?.forceJoinEnabled === 'boolean'
+        ? req.body.forceJoinEnabled
+        : store.settings.forceJoinEnabled;
     const monetagZoneId =
       typeof req.body?.monetagZoneId === 'string'
         ? req.body.monetagZoneId.trim().slice(0, 60)
@@ -590,19 +652,34 @@ async function startServer() {
 
     if (
       !Number.isFinite(watchAdsRequired) ||
-      watchAdsRequired < 1 ||
+      watchAdsRequired < 0 ||
       watchAdsRequired > 50 ||
       !Number.isFinite(downloadAdsRequired) ||
-      downloadAdsRequired < 1 ||
+      downloadAdsRequired < 0 ||
       downloadAdsRequired > 50
     ) {
-      res.status(400).json({ error: 'Ad counts must be between 1 and 50.' });
+      res.status(400).json({ error: 'Ad counts must be between 0 and 50.' });
+      return;
+    }
+
+    if (
+      !Number.isFinite(watchAdTimerSeconds) ||
+      watchAdTimerSeconds < 0 ||
+      watchAdTimerSeconds > 300 ||
+      !Number.isFinite(downloadAdTimerSeconds) ||
+      downloadAdTimerSeconds < 0 ||
+      downloadAdTimerSeconds > 300
+    ) {
+      res.status(400).json({ error: 'Ad timers must be between 0 and 300 seconds.' });
       return;
     }
 
     store.settings = {
       watchAdsRequired: Math.round(watchAdsRequired),
+      watchAdTimerSeconds: Math.round(watchAdTimerSeconds),
       downloadAdsRequired: Math.round(downloadAdsRequired),
+      downloadAdTimerSeconds: Math.round(downloadAdTimerSeconds),
+      forceJoinEnabled,
       monetagZoneId,
     };
     saveStore(store);

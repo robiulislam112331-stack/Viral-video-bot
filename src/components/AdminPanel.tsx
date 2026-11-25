@@ -12,8 +12,10 @@ import {
   Plus,
   Power,
   Radio,
+  ShieldCheck,
   Trash2,
   Upload,
+  Users,
   X,
 } from 'lucide-react';
 import type {
@@ -21,29 +23,57 @@ import type {
   ChannelItem,
   DashboardStats,
   MiniAppSettings,
+  VideoCategory,
   VideoItem,
   VideoStatus,
 } from '../types';
 
-type AdminTab = 'dashboard' | 'videos' | 'video-form' | 'channels' | 'ads';
+type AdminTab = 'dashboard' | 'videos' | 'ads' | 'channels';
 
 interface AdminPanelProps {
   adminToken: string | null;
   onSetAdminToken: (token: string | null) => void;
 }
 
+const CATEGORIES: VideoCategory[] = ['Bangla', 'Hindi', 'English'];
+const LIVE_SYNC_STORAGE_KEY = 'cinevault_live_config_v1';
+
 function formatDurationFromSeconds(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '00:00';
+  if (!Number.isFinite(seconds) || seconds <= 0) return '10:00';
   const total = Math.round(seconds);
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function broadcastConfigToLocalStorage(
+  settings: MiniAppSettings,
+  videos?: VideoItem[],
+  channels?: ChannelItem[]
+) {
+  try {
+    const existingRaw = window.localStorage.getItem(LIVE_SYNC_STORAGE_KEY);
+    const existing = existingRaw ? (JSON.parse(existingRaw) as Record<string, unknown>) : {};
+    const nextPayload = {
+      ...existing,
+      watchAdsRequired: settings.watchAdsRequired,
+      watchAdTimerSeconds: settings.watchAdTimerSeconds,
+      downloadAdsRequired: settings.downloadAdsRequired,
+      downloadAdTimerSeconds: settings.downloadAdTimerSeconds,
+      forceJoinEnabled: settings.forceJoinEnabled,
+      ...(videos ? { videos: videos.filter((v) => v.status === 'active') } : {}),
+      ...(channels ? { channels } : {}),
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(LIVE_SYNC_STORAGE_KEY, JSON.stringify(nextPayload));
+  } catch {
+    // ignore storage quota/availability errors
+  }
+}
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminToken }) => {
   const [authStatus, setAuthStatus] = useState<AdminAuthStatus | null>(null);
-  const [passcode, setPasscode] = useState('');
-  const [confirmPasscode, setConfirmPasscode] = useState('');
+  const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
@@ -57,10 +87,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   // Add / Edit Video Form
   const [editingId, setEditingId] = useState<string | null>(null);
   const [vidTitle, setVidTitle] = useState('');
-  const [vidQuality, setVidQuality] = useState('4K HDR');
-  const [vidDuration, setVidDuration] = useState('08:30');
+  const [vidCategory, setVidCategory] = useState<VideoCategory>('Bangla');
   const [vidPosterUrl, setVidPosterUrl] = useState('');
   const [vidUrl, setVidUrl] = useState('');
+  const [vidDuration, setVidDuration] = useState('10:00');
+  const [vidQuality, setVidQuality] = useState('1080p');
   const [vidStatus, setVidStatus] = useState<VideoStatus>('active');
   const [uploadingPoster, setUploadingPoster] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
@@ -69,14 +100,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   // Channels Form
   const [chName, setChName] = useState('');
   const [chHandle, setChHandle] = useState('');
-  const [chMembers, setChMembers] = useState('');
   const [chUrl, setChUrl] = useState('');
   const [savingChannel, setSavingChannel] = useState(false);
 
-  // Ads Settings Form
-  const [watchAdsRequired, setWatchAdsRequired] = useState(5);
-  const [downloadAdsRequired, setDownloadAdsRequired] = useState(15);
-  const [monetagZoneId, setMonetagZoneId] = useState('');
+  // Ad Settings Form
+  const [watchAdsRequired, setWatchAdsRequired] = useState(1);
+  const [watchAdTimerSeconds, setWatchAdTimerSeconds] = useState(15);
+  const [downloadAdsRequired, setDownloadAdsRequired] = useState(2);
+  const [downloadAdTimerSeconds, setDownloadAdTimerSeconds] = useState(15);
+  const [forceJoinEnabled, setForceJoinEnabled] = useState(true);
+  const [monetagZoneId, setMonetagZoneId] = useState('12118221');
   const [savingSettings, setSavingSettings] = useState(false);
 
   const showToast = (type: 'ok' | 'err', text: string) => {
@@ -86,14 +119,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     }, 3500);
   };
 
+  const currentSettingsSnapshot = (): MiniAppSettings => ({
+    watchAdsRequired,
+    watchAdTimerSeconds,
+    downloadAdsRequired,
+    downloadAdTimerSeconds,
+    forceJoinEnabled,
+    monetagZoneId,
+  });
+
   const fetchAuthStatus = useCallback(async () => {
-    const res = await fetch('/api/admin/auth/status', {
-      headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : {},
-    });
-    const data = (await res.json()) as AdminAuthStatus;
-    setAuthStatus(data);
-    if (!data.authenticated && adminToken) {
-      onSetAdminToken(null);
+    try {
+      const res = await fetch('/api/admin/auth/status', {
+        headers: adminToken ? { Authorization: `Bearer ${adminToken}` } : {},
+      });
+      const data = (await res.json()) as AdminAuthStatus;
+      setAuthStatus(data);
+      if (!data.authenticated && adminToken) {
+        onSetAdminToken(null);
+      }
+    } catch {
+      // ignore initial check error
     }
   }, [adminToken, onSetAdminToken]);
 
@@ -119,8 +165,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       setVideos(data.videos);
       setChannels(data.channels);
       setWatchAdsRequired(data.settings.watchAdsRequired);
+      setWatchAdTimerSeconds(data.settings.watchAdTimerSeconds);
       setDownloadAdsRequired(data.settings.downloadAdsRequired);
-      setMonetagZoneId(data.settings.monetagZoneId || '');
+      setDownloadAdTimerSeconds(data.settings.downloadAdTimerSeconds);
+      setForceJoinEnabled(data.settings.forceJoinEnabled);
+      setMonetagZoneId(data.settings.monetagZoneId || '12118221');
+      broadcastConfigToLocalStorage(data.settings, data.videos, data.channels);
     } finally {
       setLoadingOverview(false);
     }
@@ -139,22 +189,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const resetVideoForm = () => {
     setEditingId(null);
     setVidTitle('');
-    setVidQuality('4K HDR');
-    setVidDuration('08:30');
+    setVidCategory('Bangla');
     setVidPosterUrl('');
     setVidUrl('');
+    setVidDuration('10:00');
+    setVidQuality('1080p');
     setVidStatus('active');
   };
 
   const openEditVideo = (video: VideoItem) => {
     setEditingId(video.id);
     setVidTitle(video.title);
-    setVidQuality(video.quality);
-    setVidDuration(video.duration);
+    const cat = CATEGORIES.includes(video.category as VideoCategory)
+      ? (video.category as VideoCategory)
+      : 'Bangla';
+    setVidCategory(cat);
     setVidPosterUrl(video.posterUrl);
     setVidUrl(video.videoUrl);
+    setVidDuration(video.duration || '10:00');
+    setVidQuality(video.quality || '1080p');
     setVidStatus(video.status);
-    setActiveTab('video-form');
+    setActiveTab('videos');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const detectDuration = (src: string) => {
@@ -172,30 +228,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-
-    if (authStatus?.needsClaim && passcode !== confirmPasscode) {
-      setAuthError('Passcodes do not match.');
-      return;
-    }
-
     setAuthLoading(true);
     try {
-      const endpoint = authStatus?.needsClaim ? '/api/admin/auth/claim' : '/api/admin/auth/login';
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/admin/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ passcode: password }),
       });
       const data = (await res.json()) as { token?: string; error?: string };
       if (!res.ok || !data.token) {
-        setAuthError(data.error || 'Authentication failed.');
+        setAuthError(data.error || 'Invalid password.');
         return;
       }
-      setPasscode('');
-      setConfirmPasscode('');
+      setPassword('');
       onSetAdminToken(data.token);
     } catch {
-      setAuthError('Network error while authenticating.');
+      setAuthError('Network error while signing in.');
     } finally {
       setAuthLoading(false);
     }
@@ -252,6 +300,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify({
           title: vidTitle,
+          category: vidCategory,
           quality: vidQuality,
           duration: vidDuration,
           posterUrl: vidPosterUrl,
@@ -269,15 +318,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
 
-      if (isEditing) {
-        setVideos((prev) => prev.map((v) => (v.id === data.video!.id ? data.video! : v)));
-      } else {
-        setVideos((prev) => [data.video!, ...prev]);
-      }
+      const nextVideos = isEditing
+        ? videos.map((v) => (v.id === data.video!.id ? data.video! : v))
+        : [data.video!, ...videos];
+      setVideos(nextVideos);
       if (data.stats) setStats(data.stats);
+      broadcastConfigToLocalStorage(currentSettingsSnapshot(), nextVideos, channels);
       showToast('ok', isEditing ? `Updated "${data.video.title}"` : `Added "${data.video.title}"`);
       resetVideoForm();
-      setActiveTab('videos');
     } finally {
       setSavingVideo(false);
     }
@@ -296,8 +344,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     });
     const data = (await res.json()) as { video?: VideoItem; stats?: DashboardStats };
     if (res.ok && data.video) {
-      setVideos((prev) => prev.map((v) => (v.id === video.id ? data.video! : v)));
+      const nextVideos = videos.map((v) => (v.id === video.id ? data.video! : v));
+      setVideos(nextVideos);
       if (data.stats) setStats(data.stats);
+      broadcastConfigToLocalStorage(currentSettingsSnapshot(), nextVideos, channels);
       showToast('ok', `${data.video.title} is now ${data.video.status}.`);
     }
   };
@@ -310,8 +360,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     });
     if (res.ok) {
       const data = (await res.json()) as { stats?: DashboardStats };
-      setVideos((prev) => prev.filter((v) => v.id !== id));
+      const nextVideos = videos.filter((v) => v.id !== id);
+      setVideos(nextVideos);
       if (data.stats) setStats(data.stats);
+      broadcastConfigToLocalStorage(currentSettingsSnapshot(), nextVideos, channels);
+      if (editingId === id) resetVideoForm();
       showToast('ok', 'Movie deleted.');
     }
   };
@@ -330,7 +383,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         body: JSON.stringify({
           name: chName,
           handle: chHandle,
-          members: chMembers,
+          members: '',
           url: chUrl,
         }),
       });
@@ -340,9 +393,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
       setChannels(data.channels);
+      broadcastConfigToLocalStorage(currentSettingsSnapshot(), videos, data.channels);
       setChName('');
       setChHandle('');
-      setChMembers('');
       setChUrl('');
       showToast('ok', 'Channel added.');
     } finally {
@@ -359,6 +412,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     if (res.ok) {
       const data = (await res.json()) as { channels: ChannelItem[] };
       setChannels(data.channels);
+      broadcastConfigToLocalStorage(currentSettingsSnapshot(), videos, data.channels);
       showToast('ok', 'Channel removed.');
     }
   };
@@ -376,70 +430,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify({
           watchAdsRequired,
+          watchAdTimerSeconds,
           downloadAdsRequired,
+          downloadAdTimerSeconds,
+          forceJoinEnabled,
           monetagZoneId,
         }),
       });
       const data = (await res.json()) as { settings?: MiniAppSettings; error?: string };
       if (!res.ok || !data.settings) {
-        showToast('err', data.error || 'Failed to save ad settings.');
+        showToast('err', data.error || 'Failed to save settings.');
         return;
       }
-      showToast('ok', 'Monetag ad counts & Zone ID saved.');
+      setWatchAdsRequired(data.settings.watchAdsRequired);
+      setWatchAdTimerSeconds(data.settings.watchAdTimerSeconds);
+      setDownloadAdsRequired(data.settings.downloadAdsRequired);
+      setDownloadAdTimerSeconds(data.settings.downloadAdTimerSeconds);
+      setForceJoinEnabled(data.settings.forceJoinEnabled);
+      setMonetagZoneId(data.settings.monetagZoneId);
+      broadcastConfigToLocalStorage(data.settings, videos, channels);
+      showToast('ok', 'Ad Settings saved! Bot & Website updated immediately.');
     } finally {
       setSavingSettings(false);
     }
   };
 
+  // --- Admin Login Screen ---
   if (!adminToken) {
     return (
       <section className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-4 py-12">
-        <div className="w-full rounded-2xl border border-red-500/25 bg-[#121215] p-7 shadow-2xl">
+        <div className="w-full rounded-2xl border border-red-500/30 bg-gradient-to-b from-[#17171B] to-[#0B0B0E] p-7 shadow-[0_24px_60px_rgba(0,0,0,0.9)]">
           <div className="flex items-center gap-2 text-xs font-semibold text-[#ff5c40]">
             <Lock className="h-3.5 w-3.5" />
-            <span>{authStatus?.needsClaim ? 'First-Run Admin Setup' : 'Secret Admin Access'}</span>
+            <span>Admin Authentication</span>
           </div>
-          <h1 className="mt-1.5 font-display text-2xl font-bold text-white">
-            {authStatus?.needsClaim ? 'Set Admin Passcode' : 'CineVault Admin'}
+          <h1 className="mt-2 font-display text-2xl font-bold tracking-tight text-white">
+            CineVault Admin Login
           </h1>
           <p className="mt-1 text-xs text-[#9CA3AF]">
-            {authStatus?.needsClaim
-              ? 'Create a passcode to protect /admin movie & channel management.'
-              : 'Sign in to manage movies, channels, and Monetag ad counts.'}
+            Sign in to control videos, ad counts, timers, and Force Join.
           </p>
 
-          <form onSubmit={handleAuthSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleAuthSubmit} className="mt-6 space-y-4">
             <div>
-              <label htmlFor="adm-pass" className="block text-xs font-medium text-[#D1D5DB]">
-                Passcode
+              <label htmlFor="adm-pass" className="block text-xs font-semibold text-[#E5E7EB]">
+                Password
               </label>
               <input
                 id="adm-pass"
                 type="password"
                 required
-                minLength={4}
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white focus:border-[#ff4d4d] focus:outline-none"
+                autoFocus
+                placeholder="Enter admin password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-3 text-sm text-white placeholder:text-[#6B7280] focus:border-[#ff4d4d] focus:outline-none"
               />
             </div>
-
-            {authStatus?.needsClaim && (
-              <div>
-                <label htmlFor="adm-pass-2" className="block text-xs font-medium text-[#D1D5DB]">
-                  Confirm Passcode
-                </label>
-                <input
-                  id="adm-pass-2"
-                  type="password"
-                  required
-                  minLength={4}
-                  value={confirmPasscode}
-                  onChange={(e) => setConfirmPasscode(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white focus:border-[#ff4d4d] focus:outline-none"
-                />
-              </div>
-            )}
 
             {authError && (
               <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
@@ -450,13 +497,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
             <button
               type="submit"
-              disabled={authLoading}
-              className="flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#ff4d4d] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#ff6666] disabled:opacity-60 transition-colors"
+              disabled={authLoading || authStatus === null && false}
+              className="flex min-h-[46px] w-full items-center justify-center rounded-xl bg-gradient-to-b from-[#ff4d4d] to-[#b30000] px-4 py-2.5 text-sm font-bold text-white shadow-[0_6px_0_#5a0000] active:translate-y-1 transition-all disabled:opacity-60"
             >
               {authLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <span>{authStatus?.needsClaim ? 'Claim /admin Console' : 'Sign In'}</span>
+                <span>Sign In to Admin</span>
               )}
             </button>
           </form>
@@ -467,50 +514,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
   const navItems: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
-    { id: 'videos', label: 'Movies', icon: <Film className="h-4 w-4" /> },
-    {
-      id: 'video-form',
-      label: editingId ? 'Edit Movie' : 'Add Movie',
-      icon: <Plus className="h-4 w-4" />,
-    },
+    { id: 'videos', label: 'Videos', icon: <Film className="h-4 w-4" /> },
+    { id: 'ads', label: 'Ad Settings', icon: <Megaphone className="h-4 w-4" /> },
     { id: 'channels', label: 'Channels', icon: <Radio className="h-4 w-4" /> },
-    { id: 'ads', label: 'Monetag Ads', icon: <Megaphone className="h-4 w-4" /> },
   ];
 
   return (
     <div className="min-h-screen bg-[#08080A] text-[#F3F4F6]">
-      <header className="border-b border-white/[0.08] bg-[#0D0D10]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-8 px-4 py-3.5 sm:px-6">
-          <span className="font-display text-lg font-bold text-white whitespace-nowrap shrink-0">
-            CineVault Admin
-          </span>
-          <a
-            href="/"
-            className="rounded-lg border border-white/10 px-3.5 py-2 text-xs font-semibold text-[#D1D5DB] hover:border-[#ff4d4d]/50 hover:text-white transition-colors whitespace-nowrap"
-          >
-            Open Mini App
-          </a>
+      <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#0D0D10]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ff4d4d] shadow-[0_0_10px_#ff4d4d]" />
+            <span className="font-display text-lg font-bold text-white whitespace-nowrap">
+              CineVault Admin
+            </span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <a
+              href="/"
+              className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[#D1D5DB] hover:border-[#ff4d4d]/50 hover:text-white transition-colors whitespace-nowrap"
+            >
+              Open Bot / Site
+            </a>
+            <button
+              type="button"
+              onClick={() => onSetAdminToken(null)}
+              aria-label="Log out"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[#9CA3AF] hover:border-red-500/40 hover:text-red-300 transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row">
-        <aside className="w-full shrink-0 lg:w-60">
-          <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-3">
-            <div className="flex flex-row gap-1 overflow-x-auto lg:flex-col">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-5 sm:px-6 lg:flex-row lg:py-7">
+        <aside className="w-full shrink-0 lg:w-56">
+          <nav className="rounded-2xl border border-white/[0.08] bg-[#121215] p-2.5">
+            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-row lg:flex-col">
               {navItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => {
-                    if (item.id === 'video-form' && activeTab !== 'video-form') {
-                      resetVideoForm();
-                    }
-                    setActiveTab(item.id);
-                  }}
-                  className={`flex min-h-[40px] items-center gap-2.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  onClick={() => setActiveTab(item.id)}
+                  className={`flex min-h-[42px] items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors whitespace-nowrap lg:justify-start ${
                     activeTab === item.id
-                      ? 'bg-[#ff4d4d] text-white'
-                      : 'text-[#9CA3AF] hover:bg-white/[0.04] hover:text-white'
+                      ? 'bg-gradient-to-b from-[#ff4d4d] to-[#c81e1e] text-white shadow-lg shadow-red-950/50'
+                      : 'text-[#9CA3AF] hover:bg-white/[0.05] hover:text-white'
                   }`}
                 >
                   {item.icon}
@@ -518,30 +569,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                 </button>
               ))}
             </div>
-            <div className="mt-3 hidden border-t border-white/[0.08] pt-3 lg:block">
-              <button
-                type="button"
-                onClick={() => onSetAdminToken(null)}
-                className="flex min-h-[38px] w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-xs font-medium text-[#9CA3AF] hover:text-red-300"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Lock Session</span>
-              </button>
-            </div>
-          </div>
+          </nav>
         </aside>
 
         <main className="min-w-0 flex-1 space-y-6">
           {banner && (
             <div
-              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-xs font-medium ${
+              role="status"
+              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-xs font-semibold ${
                 banner.type === 'ok'
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-red-500/30 bg-red-500/10 text-red-300'
+                  ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                  : 'border-red-500/35 bg-red-500/15 text-red-300'
               }`}
             >
               <span>{banner.text}</span>
-              <button type="button" onClick={() => setBanner(null)}>
+              <button type="button" onClick={() => setBanner(null)} className="ml-3">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -549,311 +591,491 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
           {loadingOverview && !stats ? (
             <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-8 text-center text-sm text-[#9CA3AF]">
-              Loading...
+              Loading admin console...
             </div>
           ) : (
             <>
+              {/* DASHBOARD */}
               {activeTab === 'dashboard' && stats && (
                 <div className="space-y-6">
-                  <h1 className="font-display text-2xl font-bold text-white">Dashboard</h1>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
-                      <p className="text-xs text-[#9CA3AF]">Total Movies</p>
-                      <p className="mt-2 font-mono text-3xl font-bold text-white tabular-nums">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h1 className="font-display text-2xl font-bold text-white">Dashboard</h1>
+                    <div className="flex items-center gap-2 text-xs font-semibold">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 ${
+                          forceJoinEnabled
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                            : 'border-white/10 bg-white/5 text-[#9CA3AF]'
+                        }`}
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Force Join: {forceJoinEnabled ? 'ON' : 'OFF'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Primary Stats: Total Videos & Total Users */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-red-500/25 bg-gradient-to-br from-[#17171B] to-[#0D0D10] p-6 shadow-xl">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                          Total Videos
+                        </p>
+                        <Film className="h-5 w-5 text-[#ff5c40]" />
+                      </div>
+                      <p className="mt-3 font-mono text-4xl font-bold text-white tabular-nums">
                         {stats.totalVideos}
                       </p>
-                    </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
-                      <p className="text-xs text-[#9CA3AF]">Active Movies</p>
-                      <p className="mt-2 font-mono text-3xl font-bold text-emerald-400 tabular-nums">
-                        {stats.activeVideos}
+                      <p className="mt-1 text-xs text-[#9CA3AF]">
+                        {stats.activeVideos} active on Mini App
                       </p>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
-                      <p className="text-xs text-[#9CA3AF]">Total Views</p>
-                      <p className="mt-2 font-mono text-3xl font-bold text-white tabular-nums">
-                        {stats.totalViews.toLocaleString()}
+
+                    <div className="rounded-2xl border border-red-500/25 bg-gradient-to-br from-[#17171B] to-[#0D0D10] p-6 shadow-xl">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                          Total Users
+                        </p>
+                        <Users className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <p className="mt-3 font-mono text-4xl font-bold text-white tabular-nums">
+                        {stats.totalUsers.toLocaleString()}
+                      </p>
+                      <p className="mt-1 text-xs text-[#9CA3AF]">
+                        Unique Telegram &amp; Web visitors
                       </p>
                     </div>
+                  </div>
+
+                  {/* Live Ad Policy Summary + Quick Actions */}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
-                      <p className="text-xs text-[#9CA3AF]">Total Downloads</p>
-                      <p className="mt-2 font-mono text-3xl font-bold text-[#ff5c40] tabular-nums">
-                        {stats.totalDownloads.toLocaleString()}
+                      <p className="text-xs font-semibold text-[#9CA3AF]">Active Play Rule</p>
+                      <p className="mt-2 font-mono text-lg font-bold text-white">
+                        {watchAdsRequired} {watchAdsRequired === 1 ? 'Ad' : 'Ads'} ·{' '}
+                        {watchAdTimerSeconds}s Timer
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('ads')}
+                        className="mt-3 text-xs font-semibold text-[#ff5c40] hover:underline"
+                      >
+                        Change Ad Settings →
+                      </button>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
+                      <p className="text-xs font-semibold text-[#9CA3AF]">Active Download Rule</p>
+                      <p className="mt-2 font-mono text-lg font-bold text-white">
+                        {downloadAdsRequired} {downloadAdsRequired === 1 ? 'Ad' : 'Ads'} ·{' '}
+                        {downloadAdTimerSeconds}s Timer
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('videos')}
+                        className="mt-3 text-xs font-semibold text-[#ff5c40] hover:underline"
+                      >
+                        Add or Manage Videos →
+                      </button>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* ADD NEW VIDEO FORM + VIDEO LIST WITH DELETE */}
               {activeTab === 'videos' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h1 className="font-display text-2xl font-bold text-white">Movies</h1>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetVideoForm();
-                        setActiveTab('video-form');
-                      }}
-                      className="inline-flex items-center gap-2 rounded-xl bg-[#ff4d4d] px-4 py-2 text-xs font-bold text-white"
-                    >
-                      <Plus className="h-4 w-4" />
-                      <span>Add Movie</span>
-                    </button>
-                  </div>
+                <div className="space-y-6">
+                  <form
+                    onSubmit={handleSaveVideo}
+                    className="rounded-2xl border border-red-500/20 bg-gradient-to-b from-[#151519] to-[#101013] p-5 sm:p-6 space-y-4 shadow-xl"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <h1 className="font-display text-xl font-bold text-white">
+                        {editingId ? 'Edit Video' : 'Add New Video'}
+                      </h1>
+                      {editingId && (
+                        <button
+                          type="button"
+                          onClick={resetVideoForm}
+                          className="rounded-lg border border-white/10 px-3 py-1 text-xs font-semibold text-[#9CA3AF] hover:text-white"
+                        >
+                          Cancel Edit
+                        </button>
+                      )}
+                    </div>
 
-                  <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5 overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-white/[0.06] text-[#9CA3AF]">
-                          <th className="py-2.5 pr-4">Movie</th>
-                          <th className="py-2.5 pr-4">Quality</th>
-                          <th className="py-2.5 pr-4 text-right">Views</th>
-                          <th className="py-2.5 pr-4 text-right">Downloads</th>
-                          <th className="py-2.5 pr-4">Status</th>
-                          <th className="py-2.5 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/[0.05]">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#D1D5DB]">
+                          Movie Name
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Toofan (2024)"
+                          value={vidTitle}
+                          onChange={(e) => setVidTitle(e.target.value)}
+                          className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white placeholder:text-[#6B7280] focus:border-[#ff4d4d] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#D1D5DB]">
+                          Category
+                        </label>
+                        <select
+                          value={vidCategory}
+                          onChange={(e) => setVidCategory(e.target.value as VideoCategory)}
+                          className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white focus:border-[#ff4d4d] focus:outline-none"
+                        >
+                          {CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#D1D5DB]">
+                          Poster Image URL
+                        </label>
+                        <div className="mt-1.5 flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="https://... or upload"
+                            value={vidPosterUrl}
+                            onChange={(e) => setVidPosterUrl(e.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-xs text-white placeholder:text-[#6B7280] focus:border-[#ff4d4d] focus:outline-none"
+                          />
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#1B1B20] px-3 text-xs font-semibold text-white hover:border-[#ff4d4d]/50 shrink-0">
+                            {uploadingPoster ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Upload className="h-3.5 w-3.5" />
+                            )}
+                            <span>Upload</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) void handleUpload(f, 'poster');
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#D1D5DB]">
+                          Video File / Video URL
+                        </label>
+                        <div className="mt-1.5 flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="https://.../movie.mp4 or upload"
+                            value={vidUrl}
+                            onChange={(e) => {
+                              setVidUrl(e.target.value);
+                              detectDuration(e.target.value);
+                            }}
+                            className="w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-xs text-white placeholder:text-[#6B7280] focus:border-[#ff4d4d] focus:outline-none"
+                          />
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#1B1B20] px-3 text-xs font-semibold text-white hover:border-[#ff4d4d]/50 shrink-0">
+                            {uploadingVideo ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Upload className="h-3.5 w-3.5" />
+                            )}
+                            <span>Upload</span>
+                            <input
+                              type="file"
+                              accept="video/mp4,video/webm,video/quicktime"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) void handleUpload(f, 'video');
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          type="text"
+                          value={vidQuality}
+                          onChange={(e) => setVidQuality(e.target.value)}
+                          placeholder="Quality (1080p)"
+                          aria-label="Quality"
+                          className="w-28 rounded-xl border border-white/10 bg-[#08080A] px-3 py-2 text-xs text-white"
+                        />
+                        <input
+                          type="text"
+                          value={vidDuration}
+                          onChange={(e) => setVidDuration(e.target.value)}
+                          placeholder="10:00"
+                          aria-label="Duration"
+                          className="w-24 rounded-xl border border-white/10 bg-[#08080A] px-3 py-2 font-mono text-xs text-white"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingVideo}
+                        className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#ff4d4d] to-[#b30000] px-6 py-2.5 text-xs font-bold text-white shadow-[0_5px_0_#5a0000] active:translate-y-0.5 transition-all disabled:opacity-60"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>{savingVideo ? 'Saving...' : editingId ? 'Update Video' : 'Save'}</span>
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Video List Below with Delete Button */}
+                  <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-4 sm:p-5">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h2 className="font-display text-base font-bold text-white">
+                        Video List ({videos.length})
+                      </h2>
+                    </div>
+
+                    {videos.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-[#9CA3AF]">
+                        No videos added yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
                         {videos.map((v) => (
-                          <tr key={v.id}>
-                            <td className="py-3 pr-4">
-                              <div className="flex items-center gap-3">
-                                <img
-                                  src={v.posterUrl}
-                                  alt={v.title}
-                                  className="h-11 w-9 rounded object-cover bg-black shrink-0"
-                                />
-                                <div>
-                                  <p className="font-semibold text-white">{v.title}</p>
-                                  <p className="text-[11px] text-[#9CA3AF]">{v.duration}</p>
+                          <div
+                            key={v.id}
+                            className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-[#0B0B0E] p-3.5 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <img
+                                src={v.posterUrl}
+                                alt={v.title}
+                                className="h-14 w-11 rounded-lg object-cover bg-black shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-white">{v.title}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#9CA3AF]">
+                                  <span className="rounded bg-red-500/15 px-2 py-0.5 font-semibold text-[#ff7b66]">
+                                    {v.category || 'English'}
+                                  </span>
+                                  <span>{v.quality}</span>
+                                  <span>·</span>
+                                  <span>{v.duration}</span>
+                                  <span>·</span>
+                                  <span
+                                    className={
+                                      v.status === 'active' ? 'text-emerald-400' : 'text-[#6B7280]'
+                                    }
+                                  >
+                                    {v.status === 'active' ? 'Active' : 'Inactive'}
+                                  </span>
                                 </div>
                               </div>
-                            </td>
-                            <td className="py-3 pr-4 text-[#D1D5DB]">{v.quality}</td>
-                            <td className="py-3 pr-4 text-right font-mono tabular-nums">
-                              {v.views.toLocaleString()}
-                            </td>
-                            <td className="py-3 pr-4 text-right font-mono tabular-nums">
-                              {v.downloads.toLocaleString()}
-                            </td>
-                            <td className="py-3 pr-4">
-                              <span
-                                className={
-                                  v.status === 'active' ? 'text-emerald-400' : 'text-[#6B7280]'
-                                }
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openEditVideo(v)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-white hover:border-[#ff4d4d]"
                               >
-                                {v.status === 'active' ? 'Active' : 'Inactive'}
-                              </span>
-                            </td>
-                            <td className="py-3 text-right">
-                              <div className="inline-flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditVideo(v)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:border-[#ff4d4d]"
-                                >
-                                  <Edit3 className="h-3.5 w-3.5" />
-                                  <span>Edit</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleToggleStatus(v)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-[#D1D5DB]"
-                                >
-                                  <Power className="h-3.5 w-3.5" />
-                                  <span>{v.status === 'active' ? 'On' : 'Off'}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDeleteVideo(v.id)}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-red-400 hover:bg-red-500/15"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
+                                <Edit3 className="h-3.5 w-3.5" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleToggleStatus(v)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-[#D1D5DB]"
+                              >
+                                <Power className="h-3.5 w-3.5" />
+                                <span>{v.status === 'active' ? 'On' : 'Off'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteVideo(v.id)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {activeTab === 'video-form' && (
+              {/* AD SETTINGS SECTION */}
+              {activeTab === 'ads' && (
                 <form
-                  onSubmit={handleSaveVideo}
-                  className="rounded-2xl border border-white/[0.08] bg-[#121215] p-6 space-y-4"
+                  onSubmit={handleSaveSettings}
+                  className="rounded-2xl border border-red-500/25 bg-gradient-to-b from-[#151519] to-[#101013] p-5 sm:p-6 space-y-6 shadow-xl"
                 >
-                  <h1 className="font-display text-xl font-bold text-white">
-                    {editingId ? 'Edit Movie' : 'Add Movie'}
-                  </h1>
+                  <div>
+                    <h1 className="font-display text-xl font-bold text-white">Ad Settings</h1>
+                    <p className="mt-1 text-xs text-[#9CA3AF]">
+                      Changes saved here apply immediately to both the Telegram Mini App and Website.
+                    </p>
+                  </div>
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-[#D1D5DB]">Movie Title</label>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/[0.07] bg-[#0A0A0D] p-4">
+                      <label
+                        htmlFor="play-ads-count"
+                        className="block text-xs font-semibold text-[#E5E7EB]"
+                      >
+                        How many Ads to Watch before Video Play
+                      </label>
                       <input
-                        type="text"
+                        id="play-ads-count"
+                        type="number"
+                        min={0}
+                        max={50}
                         required
-                        value={vidTitle}
-                        onChange={(e) => setVidTitle(e.target.value)}
-                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
+                        value={watchAdsRequired}
+                        onChange={(e) => setWatchAdsRequired(Number(e.target.value))}
+                        className="mt-2 w-full rounded-xl border border-white/10 bg-[#121216] px-3.5 py-2.5 font-mono text-base font-bold text-white focus:border-[#ff4d4d] focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">Quality</label>
+
+                    <div className="rounded-xl border border-white/[0.07] bg-[#0A0A0D] p-4">
+                      <label
+                        htmlFor="play-ads-timer"
+                        className="block text-xs font-semibold text-[#E5E7EB]"
+                      >
+                        Ad Timer in Seconds before Video Play
+                      </label>
                       <input
-                        type="text"
+                        id="play-ads-timer"
+                        type="number"
+                        min={0}
+                        max={300}
                         required
-                        value={vidQuality}
-                        onChange={(e) => setVidQuality(e.target.value)}
-                        placeholder="4K HDR"
-                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
+                        value={watchAdTimerSeconds}
+                        onChange={(e) => setWatchAdTimerSeconds(Number(e.target.value))}
+                        className="mt-2 w-full rounded-xl border border-white/10 bg-[#121216] px-3.5 py-2.5 font-mono text-base font-bold text-white focus:border-[#ff4d4d] focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-white/[0.07] bg-[#0A0A0D] p-4">
+                      <label
+                        htmlFor="dl-ads-count"
+                        className="block text-xs font-semibold text-[#E5E7EB]"
+                      >
+                        How many Ads to Watch before Video Download
+                      </label>
+                      <input
+                        id="dl-ads-count"
+                        type="number"
+                        min={0}
+                        max={50}
+                        required
+                        value={downloadAdsRequired}
+                        onChange={(e) => setDownloadAdsRequired(Number(e.target.value))}
+                        className="mt-2 w-full rounded-xl border border-white/10 bg-[#121216] px-3.5 py-2.5 font-mono text-base font-bold text-white focus:border-[#ff4d4d] focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-white/[0.07] bg-[#0A0A0D] p-4">
+                      <label
+                        htmlFor="dl-ads-timer"
+                        className="block text-xs font-semibold text-[#E5E7EB]"
+                      >
+                        Ad Timer in Seconds before Download
+                      </label>
+                      <input
+                        id="dl-ads-timer"
+                        type="number"
+                        min={0}
+                        max={300}
+                        required
+                        value={downloadAdTimerSeconds}
+                        onChange={(e) => setDownloadAdTimerSeconds(Number(e.target.value))}
+                        className="mt-2 w-full rounded-xl border border-white/10 bg-[#121216] px-3.5 py-2.5 font-mono text-base font-bold text-white focus:border-[#ff4d4d] focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Force Join ON/OFF Toggle */}
+                  <div className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#0A0A0D] p-4">
                     <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Poster Upload or URL
-                      </label>
-                      <div className="mt-1.5 flex gap-2">
-                        <input
-                          type="text"
-                          required
-                          value={vidPosterUrl}
-                          onChange={(e) => setVidPosterUrl(e.target.value)}
-                          className="w-full rounded-xl border border-white/10 bg-[#08080A] px-3 py-2 text-xs text-white"
-                        />
-                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/10 bg-[#1B1B20] px-3 text-xs font-semibold text-white shrink-0">
-                          {uploadingPoster ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Upload className="h-3.5 w-3.5" />
-                          )}
-                          <span>Upload</span>
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) void handleUpload(f, 'poster');
-                            }}
-                          />
-                        </label>
-                      </div>
+                      <p className="text-sm font-bold text-white">Force Join Gate</p>
+                      <p className="mt-0.5 text-xs text-[#9CA3AF]">
+                        Require users to join all official channels before accessing movies.
+                      </p>
                     </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Video File Upload or Link
-                      </label>
-                      <div className="mt-1.5 flex gap-2">
-                        <input
-                          type="text"
-                          required
-                          value={vidUrl}
-                          onChange={(e) => {
-                            setVidUrl(e.target.value);
-                            detectDuration(e.target.value);
-                          }}
-                          className="w-full rounded-xl border border-white/10 bg-[#08080A] px-3 py-2 text-xs text-white"
-                        />
-                        <label className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/10 bg-[#1B1B20] px-3 text-xs font-semibold text-white shrink-0">
-                          {uploadingVideo ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Upload className="h-3.5 w-3.5" />
-                          )}
-                          <span>Upload</span>
-                          <input
-                            type="file"
-                            accept="video/mp4,video/webm,video/quicktime"
-                            className="hidden"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f) void handleUpload(f, 'video');
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Duration (MM:SS)
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={vidDuration}
-                        onChange={(e) => setVidDuration(e.target.value)}
-                        className="mt-1.5 w-40 rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 font-mono text-sm text-white"
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={forceJoinEnabled}
+                      onClick={() => setForceJoinEnabled((prev) => !prev)}
+                      className={`relative inline-flex h-8 w-16 shrink-0 items-center rounded-full border transition-colors ${
+                        forceJoinEnabled
+                          ? 'border-emerald-400/50 bg-emerald-500'
+                          : 'border-white/15 bg-[#242429]'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                          forceJoinEnabled ? 'translate-x-9' : 'translate-x-1'
+                        }`}
                       />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">Status</label>
-                      <div className="mt-1.5 inline-flex gap-2 rounded-xl border border-white/10 bg-[#08080A] p-1">
-                        <button
-                          type="button"
-                          onClick={() => setVidStatus('active')}
-                          className={`rounded-lg px-4 py-1.5 text-xs font-semibold ${
-                            vidStatus === 'active' ? 'bg-emerald-500 text-black' : 'text-[#9CA3AF]'
-                          }`}
-                        >
-                          Active
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setVidStatus('inactive')}
-                          className={`rounded-lg px-4 py-1.5 text-xs font-semibold ${
-                            vidStatus === 'inactive' ? 'bg-[#2A2A32] text-white' : 'text-[#9CA3AF]'
-                          }`}
-                        >
-                          Inactive
-                        </button>
-                      </div>
-                    </div>
+                      <span className="sr-only">
+                        {forceJoinEnabled ? 'Force Join ON' : 'Force Join OFF'}
+                      </span>
+                    </button>
                   </div>
 
                   <button
                     type="submit"
-                    disabled={savingVideo}
-                    className="inline-flex min-h-[42px] items-center gap-2 rounded-xl bg-[#ff4d4d] px-5 py-2 text-xs font-bold text-white"
+                    disabled={savingSettings}
+                    className="inline-flex min-h-[46px] w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#ff4d4d] to-[#b30000] px-6 py-2.5 text-sm font-bold text-white shadow-[0_5px_0_#5a0000] active:translate-y-0.5 transition-all disabled:opacity-60"
                   >
                     <Check className="h-4 w-4" />
-                    <span>{savingVideo ? 'Saving...' : 'Save Movie'}</span>
+                    <span>{savingSettings ? 'Saving Settings...' : 'Save Settings'}</span>
                   </button>
                 </form>
               )}
 
+              {/* CHANNELS MANAGEMENT */}
               {activeTab === 'channels' && (
                 <div className="space-y-6">
                   <form
                     onSubmit={handleAddChannel}
                     className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5 space-y-4"
                   >
-                    <h2 className="font-display text-base font-bold text-white">Add Channel</h2>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <h2 className="font-display text-base font-bold text-white">
+                      Force Join Channels
+                    </h2>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <input
                         type="text"
                         required
                         placeholder="Channel Name"
                         value={chName}
                         onChange={(e) => setChName(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
+                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white"
                       />
                       <input
                         type="text"
                         placeholder="@Username"
                         value={chHandle}
                         onChange={(e) => setChHandle(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
+                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white"
                       />
                       <input
                         type="url"
@@ -861,14 +1083,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                         placeholder="https://t.me/username"
                         value={chUrl}
                         onChange={(e) => setChUrl(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Members (e.g. 48.2K)"
-                        value={chMembers}
-                        onChange={(e) => setChMembers(e.target.value)}
-                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 text-sm text-white"
+                        className="rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2.5 text-sm text-white"
                       />
                     </div>
                     <button
@@ -884,17 +1099,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   <div className="rounded-2xl border border-white/[0.08] bg-[#121215] p-5">
                     <ul className="divide-y divide-white/[0.06]">
                       {channels.map((ch) => (
-                        <li key={ch.id} className="flex items-center justify-between py-3">
+                        <li
+                          key={ch.id}
+                          className="flex flex-wrap items-center justify-between gap-3 py-3"
+                        >
                           <div>
                             <p className="text-sm font-semibold text-white">{ch.name}</p>
                             <p className="text-xs text-[#9CA3AF]">
-                              {ch.handle} · {ch.members} · {ch.url}
+                              {ch.handle} · {ch.url}
                             </p>
                           </div>
                           <button
                             type="button"
                             onClick={() => void handleDeleteChannel(ch.id)}
-                            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/15"
+                            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20"
                           >
                             Remove
                           </button>
@@ -903,65 +1121,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                     </ul>
                   </div>
                 </div>
-              )}
-
-              {activeTab === 'ads' && (
-                <form
-                  onSubmit={handleSaveSettings}
-                  className="rounded-2xl border border-white/[0.08] bg-[#121215] p-6 space-y-4"
-                >
-                  <h1 className="font-display text-xl font-bold text-white">
-                    Monetag Ads Configuration
-                  </h1>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Watch Ads Required
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={watchAdsRequired}
-                        onChange={(e) => setWatchAdsRequired(Number(e.target.value))}
-                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 font-mono text-sm text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Download Ads Required
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={downloadAdsRequired}
-                        onChange={(e) => setDownloadAdsRequired(Number(e.target.value))}
-                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 font-mono text-sm text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[#D1D5DB]">
-                        Monetag Zone ID (Reference)
-                      </label>
-                      <input
-                        type="text"
-                        value={monetagZoneId}
-                        onChange={(e) => setMonetagZoneId(e.target.value)}
-                        placeholder="e.g. 8492014"
-                        className="mt-1.5 w-full rounded-xl border border-white/10 bg-[#08080A] px-3.5 py-2 font-mono text-sm text-white"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={savingSettings}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#ff4d4d] px-5 py-2 text-xs font-bold text-white"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>{savingSettings ? 'Saving...' : 'Save Ads Settings'}</span>
-                  </button>
-                </form>
               )}
             </>
           )}

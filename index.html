@@ -1073,6 +1073,26 @@
           } catch (e) {}
         }
 
+        function getVisitorId() {
+          if (
+            tg &&
+            tg.initDataUnsafe &&
+            tg.initDataUnsafe.user &&
+            tg.initDataUnsafe.user.id
+          ) {
+            return 'tg_' + String(tg.initDataUnsafe.user.id);
+          }
+          try {
+            var existing = localStorage.getItem('cinevault_visitor_id');
+            if (existing) return existing;
+            var created = 'web_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+            localStorage.setItem('cinevault_visitor_id', created);
+            return created;
+          } catch (e) {
+            return 'guest_viewer';
+          }
+        }
+
         var telegramUserId =
           tg &&
           tg.initDataUnsafe &&
@@ -1081,62 +1101,110 @@
             ? String(tg.initDataUnsafe.user.id)
             : 'guest_viewer';
 
+        var visitorId = getVisitorId();
+        var LIVE_CONFIG_KEY = 'cinevault_live_config_v1';
+
+        function loadLiveConfigCache() {
+          try {
+            var raw = localStorage.getItem(LIVE_CONFIG_KEY);
+            return raw ? JSON.parse(raw) : null;
+          } catch (e) {
+            return null;
+          }
+        }
+
+        function saveLiveConfigCache(cfg) {
+          try {
+            localStorage.setItem(LIVE_CONFIG_KEY, JSON.stringify(cfg));
+          } catch (e) {}
+        }
+
         // ============================================================
-        // 3. DEFAULT CHANNELS & MOVIES (Standalone + Server Sync)
+        // 3. DEFAULT CHANNELS & MOVIES (Standalone + Live Admin Sync)
         // ============================================================
+        var cachedConfig = loadLiveConfigCache();
+
         var state = {
-          watchAdsRequired: 5,
-          downloadAdsRequired: 15,
-          channels: [
-            {
-              id: 'ch_premiumapps',
-              name: 'Premium Apps',
-              handle: '@premiumapps5462',
-              members: '',
-              url: 'https://t.me/premiumapps5462',
-            },
-            {
-              id: 'ch_waincome',
-              name: 'WA Income Site',
-              handle: '@waincomesite',
-              members: '',
-              url: 'https://t.me/waincomesite',
-            },
-          ],
-          videos: [
-            {
-              id: 'vid_tokyo_rain',
-              title: 'Midnight Neon: Tokyo Rain',
-              quality: '4K HDR',
-              duration: '08:42',
-              posterUrl: '/src/assets/images/thumb_tokyo_rain_1795435877207.jpg',
-              videoUrl: 'demo://tokyo-rain',
-            },
-            {
-              id: 'vid_alpine_dawn',
-              title: 'Dolomites: Edge of Dawn',
-              quality: '4K UHD',
-              duration: '12:15',
-              posterUrl: '/src/assets/images/thumb_alpine_dawn_1795435874924.jpg',
-              videoUrl: 'demo://alpine-dawn',
-            },
-            {
-              id: 'vid_analog_studio',
-              title: 'Analog Echo: Studio Noir',
-              quality: '1080p',
-              duration: '14:30',
-              posterUrl: '/src/assets/images/thumb_analog_studio_1795435876576.jpg',
-              videoUrl: 'demo://analog-studio',
-            },
-            {
-              id: 'vid_night_circuit',
-              title: 'Night Circuit: Apex GT3',
-              quality: '4K 60fps',
-              duration: '09:54',
-              posterUrl: '/src/assets/images/thumb_night_circuit_1795435876007.jpg',
-              videoUrl: 'demo://night-circuit',
-            },
-          ],
+          watchAdsRequired:
+            cachedConfig && typeof cachedConfig.watchAdsRequired === 'number'
+              ? cachedConfig.watchAdsRequired
+              : 1,
+          watchAdTimerSeconds:
+            cachedConfig && typeof cachedConfig.watchAdTimerSeconds === 'number'
+              ? cachedConfig.watchAdTimerSeconds
+              : 15,
+          downloadAdsRequired:
+            cachedConfig && typeof cachedConfig.downloadAdsRequired === 'number'
+              ? cachedConfig.downloadAdsRequired
+              : 2,
+          downloadAdTimerSeconds:
+            cachedConfig && typeof cachedConfig.downloadAdTimerSeconds === 'number'
+              ? cachedConfig.downloadAdTimerSeconds
+              : 15,
+          forceJoinEnabled:
+            cachedConfig && typeof cachedConfig.forceJoinEnabled === 'boolean'
+              ? cachedConfig.forceJoinEnabled
+              : true,
+          channels:
+            cachedConfig && Array.isArray(cachedConfig.channels) && cachedConfig.channels.length > 0
+              ? cachedConfig.channels
+              : [
+                  {
+                    id: 'ch_premiumapps',
+                    name: 'Premium Apps',
+                    handle: '@premiumapps5462',
+                    members: '',
+                    url: 'https://t.me/premiumapps5462',
+                  },
+                  {
+                    id: 'ch_waincome',
+                    name: 'WA Income Site',
+                    handle: '@waincomesite',
+                    members: '',
+                    url: 'https://t.me/waincomesite',
+                  },
+                ],
+          videos:
+            cachedConfig && Array.isArray(cachedConfig.videos)
+              ? cachedConfig.videos
+              : [
+                  {
+                    id: 'vid_tokyo_rain',
+                    title: 'Midnight Neon: Tokyo Rain',
+                    category: 'English',
+                    quality: '4K HDR',
+                    duration: '08:42',
+                    posterUrl: '/src/assets/images/thumb_tokyo_rain_1795435877207.jpg',
+                    videoUrl: 'demo://tokyo-rain',
+                  },
+                  {
+                    id: 'vid_alpine_dawn',
+                    title: 'Dolomites: Edge of Dawn',
+                    category: 'English',
+                    quality: '4K UHD',
+                    duration: '12:15',
+                    posterUrl: '/src/assets/images/thumb_alpine_dawn_1795435874924.jpg',
+                    videoUrl: 'demo://alpine-dawn',
+                  },
+                  {
+                    id: 'vid_analog_studio',
+                    title: 'Analog Echo: Studio Noir',
+                    category: 'Hindi',
+                    quality: '1080p',
+                    duration: '14:30',
+                    posterUrl: '/src/assets/images/thumb_analog_studio_1795435876576.jpg',
+                    videoUrl: 'demo://analog-studio',
+                  },
+                  {
+                    id: 'vid_night_circuit',
+                    title: 'Night Circuit: Apex GT3',
+                    category: 'Bangla',
+                    quality: '4K 60fps',
+                    duration: '09:54',
+                    posterUrl: '/src/assets/images/thumb_night_circuit_1795435876007.jpg',
+                    videoUrl: 'demo://night-circuit',
+                  },
+                ],
           adProgress: loadSavedProgress(),
           joinedChannels: loadJoinedChannels(),
           gateVerified: loadGateVerified(),
@@ -1192,7 +1260,7 @@
         }
 
         function areAllChannelsJoined() {
-          if (!state.channels || state.channels.length === 0) return false;
+          if (!state.channels || state.channels.length === 0) return true;
           return state.channels.every(function (ch) {
             return Boolean(state.joinedChannels[ch.id]);
           });
@@ -1204,8 +1272,8 @@
         var verifyEnterBtn = document.getElementById('verify-enter-btn');
 
         function updateGateVisibility() {
-          var unlocked = state.gateVerified && areAllChannelsJoined();
-          if (!unlocked && state.gateVerified) {
+          var unlocked = !state.forceJoinEnabled || (state.gateVerified && areAllChannelsJoined());
+          if (state.forceJoinEnabled && !unlocked && state.gateVerified) {
             saveGateVerified(false);
           }
           if (unlocked) {
@@ -1242,36 +1310,64 @@
           updateGateVisibility();
         });
 
-        // Optional sync with backend when running inside the hosted app
+        function applyServerOrCachePayload(payload) {
+          if (!payload) return;
+          if (Array.isArray(payload.channels)) {
+            state.channels = payload.channels;
+          }
+          if (Array.isArray(payload.videos)) {
+            state.videos = payload.videos;
+          }
+          if (typeof payload.watchAdsRequired === 'number' && payload.watchAdsRequired >= 0) {
+            state.watchAdsRequired = payload.watchAdsRequired;
+          }
+          if (typeof payload.watchAdTimerSeconds === 'number' && payload.watchAdTimerSeconds >= 0) {
+            state.watchAdTimerSeconds = payload.watchAdTimerSeconds;
+          }
+          if (typeof payload.downloadAdsRequired === 'number' && payload.downloadAdsRequired >= 0) {
+            state.downloadAdsRequired = payload.downloadAdsRequired;
+          }
+          if (
+            typeof payload.downloadAdTimerSeconds === 'number' &&
+            payload.downloadAdTimerSeconds >= 0
+          ) {
+            state.downloadAdTimerSeconds = payload.downloadAdTimerSeconds;
+          }
+          if (typeof payload.forceJoinEnabled === 'boolean') {
+            state.forceJoinEnabled = payload.forceJoinEnabled;
+          }
+          renderChannels();
+          renderVideos();
+          updateGateVisibility();
+        }
+
+        // Live sync with backend when running inside the hosted app
         function syncFromServer() {
           if (window.location.protocol === 'file:') return;
-          fetch('/api/miniapp/data')
+          fetch('/api/miniapp/data?uid=' + encodeURIComponent(visitorId), { cache: 'no-store' })
             .then(function (res) {
               return res.ok ? res.json() : null;
             })
             .then(function (payload) {
               if (!payload) return;
-              if (Array.isArray(payload.channels) && payload.channels.length > 0) {
-                state.channels = payload.channels;
-              }
-              if (Array.isArray(payload.videos)) {
-                state.videos = payload.videos;
-              }
-              if (typeof payload.watchAdsRequired === 'number' && payload.watchAdsRequired > 0) {
-                state.watchAdsRequired = payload.watchAdsRequired;
-              }
-              if (
-                typeof payload.downloadAdsRequired === 'number' &&
-                payload.downloadAdsRequired > 0
-              ) {
-                state.downloadAdsRequired = payload.downloadAdsRequired;
-              }
-              renderChannels();
-              renderVideos();
-              updateGateVisibility();
+              saveLiveConfigCache(payload);
+              applyServerOrCachePayload(payload);
             })
             .catch(function () {});
         }
+
+        window.addEventListener('storage', function (ev) {
+          if (ev.key === LIVE_CONFIG_KEY && ev.newValue) {
+            try {
+              applyServerOrCachePayload(JSON.parse(ev.newValue));
+            } catch (e) {}
+          }
+        });
+
+        window.addEventListener('focus', syncFromServer);
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) syncFromServer();
+        });
 
         // ============================================================
         // 4. RENDER CHANNELS & VIDEOS
@@ -1412,11 +1508,13 @@
 
             var metaEl = document.createElement('p');
             metaEl.className = 'video-meta';
+            var catText = video.category ? escapeHtml(video.category) + '</span><span class="sep">·</span><span>' : '';
             metaEl.innerHTML =
               '<span>' +
-              escapeHtml(video.quality) +
+              catText +
+              escapeHtml(video.quality || 'HD') +
               '</span><span class="sep">·</span><span>' +
-              escapeHtml(video.duration) +
+              escapeHtml(video.duration || '10:00') +
               '</span>';
 
             textBlock.appendChild(titleEl);
@@ -1429,24 +1527,32 @@
             var watchBtn = document.createElement('button');
             watchBtn.type = 'button';
             watchBtn.className = 'btn-3d';
-            watchBtn.textContent = 'Watch';
+            watchBtn.textContent =
+              state.watchAdsRequired > 1
+                ? 'Watch (' + state.watchAdsRequired + ' Ads)'
+                : 'Watch';
             watchBtn.addEventListener('click', function () {
-              openWatchAdLock(video);
+              if (state.watchAdsRequired <= 0) {
+                openVideoPlayer(video);
+              } else {
+                openAdLock(video, 'watch');
+              }
             });
 
-            var dlDone =
-              getAdProgress(video.id, 'download') >= state.downloadAdsRequired;
             var dlBtn = document.createElement('button');
             dlBtn.type = 'button';
-            dlBtn.className = dlDone ? 'btn-3d btn-3d-unlocked' : 'btn-3d btn-3d-amber';
-            dlBtn.textContent = dlDone
-              ? 'Download Now'
-              : 'Download - ' + state.downloadAdsRequired + ' Ads';
+            dlBtn.className = 'btn-3d btn-3d-amber';
+            dlBtn.textContent =
+              state.downloadAdsRequired > 0
+                ? 'Download - ' +
+                  state.downloadAdsRequired +
+                  (state.downloadAdsRequired === 1 ? ' Ad' : ' Ads')
+                : 'Download';
             dlBtn.addEventListener('click', function () {
-              if (getAdProgress(video.id, 'download') >= state.downloadAdsRequired) {
+              if (state.downloadAdsRequired <= 0) {
                 triggerDownload(video);
               } else {
-                openAdModal(video, 'download');
+                openAdLock(video, 'download');
               }
             });
 
@@ -1590,14 +1696,18 @@
         });
 
         // ============================================================
-        // 5B. WATCH AD LOCK SYSTEM (15s Countdown + Monetag Ad)
+        // 5B. UNIFIED AD LOCK SYSTEM (Dynamic Count + Timer for Play & Download)
         // ============================================================
-        var WATCH_AD_DURATION_SEC = 15;
         var watchLockState = {
           video: null,
-          remaining: WATCH_AD_DURATION_SEC,
+          mode: 'watch',
+          totalAds: 1,
+          currentAd: 1,
+          timerDuration: 15,
+          remaining: 15,
           timerId: 0,
-          completed: false,
+          stepCompleted: false,
+          allCompleted: false,
           historyPushed: false,
         };
 
@@ -1625,25 +1735,34 @@
           var video = watchLockState.video;
           if (!video) return;
 
+          var isWatch = watchLockState.mode === 'watch';
+          var totalAds = Math.max(1, watchLockState.totalAds);
+          var currentAd = Math.min(totalAds, watchLockState.currentAd);
+          var dur = Math.max(0, watchLockState.timerDuration);
           var rem = Math.max(0, watchLockState.remaining);
-          var elapsed = WATCH_AD_DURATION_SEC - rem;
-          var pct = Math.min(100, Math.round((elapsed / WATCH_AD_DURATION_SEC) * 100));
+          var pct = dur > 0 ? Math.min(100, Math.round(((dur - rem) / dur) * 100)) : 100;
 
-          watchLockMovieEl.textContent = video.title + ' · ' + video.quality;
+          watchLockMovieEl.textContent =
+            video.title + ' · Ad ' + currentAd + ' of ' + totalAds;
           watchLockCounterEl.textContent = rem + 's';
           watchLockFillEl.style.width = pct + '%';
           watchTopTimerNumEl.textContent = String(rem);
 
-          if (watchLockState.completed && rem === 0) {
+          if (watchLockState.allCompleted && rem === 0) {
             watchTopTimerEl.classList.add('done');
             watchTopTimerLabelEl.textContent = 'Ad Complete';
-            watchLockTitleEl.textContent = 'Ad Complete! Ready to Watch';
-            watchLockNoteEl.textContent =
-              'Ad finished. Tap "Ad Complete! Now Watch Video" to start playback.';
+            watchLockTitleEl.textContent = isWatch
+              ? 'Ad Complete! Ready to Watch'
+              : 'Ad Complete! Ready to Download';
+            watchLockNoteEl.textContent = isWatch
+              ? 'All required ads finished. Tap "Ad Complete! Now Watch Video" to start playback.'
+              : 'All required ads finished. Tap "Ad Complete! Now Download Video" to download.';
 
             watchPlayBtn.disabled = false;
             watchPlayBtn.className = 'btn-3d btn-3d-unlocked';
-            watchPlayBtn.textContent = 'Ad Complete! Now Watch Video';
+            watchPlayBtn.textContent = isWatch
+              ? 'Ad Complete! Now Watch Video'
+              : 'Ad Complete! Now Download Video';
 
             watchSkipBtn.className = 'btn-skip-locked unlocked';
             watchSkipBtn.setAttribute('aria-disabled', 'false');
@@ -1651,10 +1770,33 @@
 
             watchLockCloseBtn.classList.remove('locked');
             watchLockCloseBtn.setAttribute('aria-disabled', 'false');
+          } else if (watchLockState.stepCompleted && rem === 0 && currentAd < totalAds) {
+            watchTopTimerEl.classList.add('done');
+            watchTopTimerLabelEl.textContent = 'Ad ' + currentAd + '/' + totalAds + ' Done';
+            watchLockTitleEl.textContent =
+              'Ad ' + currentAd + ' of ' + totalAds + ' Complete!';
+            watchLockNoteEl.textContent =
+              'Tap below to watch Ad ' + (currentAd + 1) + ' of ' + totalAds + '.';
+
+            watchPlayBtn.disabled = false;
+            watchPlayBtn.className = 'btn-3d btn-3d-amber';
+            watchPlayBtn.textContent =
+              'Watch Next Ad (' + (currentAd + 1) + '/' + totalAds + ')';
+
+            watchSkipBtn.className = 'btn-skip-locked';
+            watchSkipBtn.setAttribute('aria-disabled', 'true');
+            watchSkipBtn.textContent = 'Complete ' + totalAds + ' Ads to Unlock';
+
+            watchLockCloseBtn.classList.add('locked');
+            watchLockCloseBtn.setAttribute('aria-disabled', 'true');
           } else {
             watchTopTimerEl.classList.remove('done');
-            watchTopTimerLabelEl.textContent = 'Watching Ad';
-            watchLockTitleEl.textContent = 'Watching Ad... Please wait 15 seconds';
+            watchTopTimerLabelEl.textContent =
+              totalAds > 1 ? 'Ad ' + currentAd + '/' + totalAds : 'Watching Ad';
+            watchLockTitleEl.textContent =
+              totalAds > 1
+                ? 'Watching Ad ' + currentAd + '/' + totalAds + '... Please wait ' + dur + ' seconds'
+                : 'Watching Ad... Please wait ' + dur + ' seconds';
             watchLockNoteEl.textContent =
               'Watching Ad... Please wait ' +
               rem +
@@ -1662,7 +1804,8 @@
 
             watchPlayBtn.disabled = true;
             watchPlayBtn.className = 'btn-3d';
-            watchPlayBtn.textContent = '🔒 Video Play Locked (' + rem + 's)';
+            watchPlayBtn.textContent =
+              (isWatch ? '🔒 Video Play Locked (' : '🔒 Download Locked (') + rem + 's)';
 
             watchSkipBtn.className = 'btn-skip-locked';
             watchSkipBtn.setAttribute('aria-disabled', 'true');
@@ -1677,8 +1820,10 @@
           clearWatchAdTimer();
           var wasHistoryPushed = watchLockState.historyPushed;
           watchLockState.video = null;
-          watchLockState.remaining = WATCH_AD_DURATION_SEC;
-          watchLockState.completed = false;
+          watchLockState.currentAd = 1;
+          watchLockState.remaining = watchLockState.timerDuration;
+          watchLockState.stepCompleted = false;
+          watchLockState.allCompleted = false;
           watchLockState.historyPushed = false;
 
           watchLockModal.classList.remove('open');
@@ -1704,24 +1849,77 @@
 
         function handleLockedDismissAttempt() {
           if (!watchLockState.video) return;
-          if (!watchLockState.completed) {
-            // Until 15 seconds finish, Skip / Close button does NOT work
+          if (!watchLockState.allCompleted) {
+            // Until all required ads & timers finish, Skip / Close button does NOT work
             watchLockNoteEl.textContent =
-              'Skip & Close are disabled! Wait ' +
+              'Skip & Close are disabled! Complete Ad ' +
+              watchLockState.currentAd +
+              '/' +
+              watchLockState.totalAds +
+              ' (' +
               watchLockState.remaining +
-              's to unlock video playback.';
+              's left).';
             return;
           }
           resetAndCloseWatchAdLock(false);
         }
 
-        function openWatchAdLock(video) {
+        function startCurrentAdCountdown() {
           clearWatchAdTimer();
-          watchLockState.video = video;
-          watchLockState.remaining = WATCH_AD_DURATION_SEC;
-          watchLockState.completed = false;
+          watchLockState.stepCompleted = false;
+          watchLockState.remaining = watchLockState.timerDuration;
+
+          // Trigger Monetag Ad immediately for this ad step
+          Promise.resolve(show_Monetag_Ad()).catch(function () {});
+
+          if (watchLockState.timerDuration <= 0) {
+            watchLockState.remaining = 0;
+            watchLockState.stepCompleted = true;
+            if (watchLockState.currentAd >= watchLockState.totalAds) {
+              watchLockState.allCompleted = true;
+            }
+            updateWatchLockUI();
+            return;
+          }
 
           updateWatchLockUI();
+          watchLockState.timerId = setInterval(function () {
+            if (!watchLockState.video) {
+              clearWatchAdTimer();
+              return;
+            }
+            if (watchLockState.remaining > 1) {
+              watchLockState.remaining -= 1;
+              updateWatchLockUI();
+            } else {
+              watchLockState.remaining = 0;
+              watchLockState.stepCompleted = true;
+              if (watchLockState.currentAd >= watchLockState.totalAds) {
+                watchLockState.allCompleted = true;
+              }
+              clearWatchAdTimer();
+              updateWatchLockUI();
+            }
+          }, 1000);
+        }
+
+        function openAdLock(video, mode) {
+          clearWatchAdTimer();
+          var adMode = mode === 'download' ? 'download' : 'watch';
+          var totalAds =
+            adMode === 'download' ? state.downloadAdsRequired : state.watchAdsRequired;
+          var timerDur =
+            adMode === 'download' ? state.downloadAdTimerSeconds : state.watchAdTimerSeconds;
+
+          watchLockState.video = video;
+          watchLockState.mode = adMode;
+          watchLockState.totalAds = Math.max(1, totalAds);
+          watchLockState.currentAd = 1;
+          watchLockState.timerDuration = Math.max(0, timerDur);
+          watchLockState.remaining = Math.max(0, timerDur);
+          watchLockState.stepCompleted = false;
+          watchLockState.allCompleted = false;
+
           watchLockModal.classList.add('open');
           watchTopTimerEl.classList.add('open');
 
@@ -1744,34 +1942,27 @@
             } catch (e) {}
           }
 
-          // First, trigger Monetag Ad immediately
-          Promise.resolve(show_Monetag_Ad()).catch(function () {});
-
-          // Start 15 -> 0 countdown timer
-          watchLockState.timerId = setInterval(function () {
-            if (!watchLockState.video) {
-              clearWatchAdTimer();
-              return;
-            }
-            if (watchLockState.remaining > 1) {
-              watchLockState.remaining -= 1;
-              updateWatchLockUI();
-            } else {
-              watchLockState.remaining = 0;
-              watchLockState.completed = true;
-              clearWatchAdTimer();
-              updateWatchLockUI();
-            }
-          }, 1000);
+          startCurrentAdCountdown();
         }
 
         watchPlayBtn.addEventListener('click', function () {
-          if (!watchLockState.video || !watchLockState.completed || watchLockState.remaining > 0) {
+          if (!watchLockState.video || watchLockState.remaining > 0) {
             return;
           }
+          if (!watchLockState.allCompleted && watchLockState.currentAd < watchLockState.totalAds) {
+            watchLockState.currentAd += 1;
+            startCurrentAdCountdown();
+            return;
+          }
+          if (!watchLockState.allCompleted) return;
           var unlockedVideo = watchLockState.video;
+          var unlockedMode = watchLockState.mode;
           resetAndCloseWatchAdLock(false);
-          openVideoPlayer(unlockedVideo);
+          if (unlockedMode === 'download') {
+            triggerDownload(unlockedVideo);
+          } else {
+            openVideoPlayer(unlockedVideo);
+          }
         });
 
         watchSkipBtn.addEventListener('click', handleLockedDismissAttempt);

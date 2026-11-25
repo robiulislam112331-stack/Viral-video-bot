@@ -1,0 +1,84 @@
+{
+  "channels": [
+    {
+      "id": "ch_premiumapps",
+      "name": "Premium Apps",
+      "handle": "@premiumapps5462",
+      "members": "",
+      "url": "https://t.me/premiumapps5462"
+    },
+    {
+      "id": "ch_waincome",
+      "name": "WA Income Site",
+      "handle": "@waincomesite",
+      "members": "",
+      "url": "https://t.me/waincomesite"
+    }
+  ],
+  "videos": [
+    {
+      "id": "vid_tokyo_rain",
+      "title": "Midnight Neon: Tokyo Rain",
+      "quality": "4K HDR",
+      "duration": "08:42",
+      "posterUrl": "/src/assets/images/thumb_tokyo_rain_1795435877207.jpg",
+      "videoUrl": "demo://tokyo-rain",
+      "views": 1843,
+      "downloads": 420,
+      "status": "active",
+      "createdAt": "2026-11-20T14:20:00.000Z",
+      "category": "English"
+    },
+    {
+      "id": "vid_alpine_dawn",
+      "title": "Dolomites: Edge of Dawn",
+      "quality": "4K UHD",
+      "duration": "12:15",
+      "posterUrl": "/src/assets/images/thumb_alpine_dawn_1795435874924.jpg",
+      "videoUrl": "demo://alpine-dawn",
+      "views": 1290,
+      "downloads": 318,
+      "status": "active",
+      "createdAt": "2026-11-21T09:10:00.000Z",
+      "category": "English"
+    },
+    {
+      "id": "vid_analog_studio",
+      "title": "Analog Echo: Studio Noir",
+      "quality": "1080p",
+      "duration": "14:30",
+      "posterUrl": "/src/assets/images/thumb_analog_studio_1795435876576.jpg",
+      "videoUrl": "demo://analog-studio",
+      "views": 964,
+      "downloads": 215,
+      "status": "active",
+      "createdAt": "2026-11-22T18:45:00.000Z",
+      "category": "English"
+    },
+    {
+      "id": "vid_night_circuit",
+      "title": "Night Circuit: Apex GT3",
+      "quality": "4K 60fps",
+      "duration": "09:54",
+      "posterUrl": "/src/assets/images/thumb_night_circuit_1795435876007.jpg",
+      "videoUrl": "demo://night-circuit",
+      "views": 2105,
+      "downloads": 540,
+      "status": "active",
+      "createdAt": "2026-11-23T21:00:00.000Z",
+      "category": "English"
+    }
+  ],
+  "users": [
+    "web_c2yvjup3mwvz7vvz",
+    "test_user_1"
+  ],
+  "settings": {
+    "watchAdsRequired": 1,
+    "watchAdTimerSeconds": 15,
+    "downloadAdsRequired": 2,
+    "downloadAdTimerSeconds": 15,
+    "forceJoinEnabled": true,
+    "monetagZoneId": "12118221"
+  }
+}

@@ -1,4 +1,5 @@
 export type VideoStatus = 'active' | 'inactive';
+export type VideoCategory = 'Bangla' | 'Hindi' | 'English';
 
 export interface ChannelItem {
   id: string;
@@ -11,6 +12,7 @@ export interface ChannelItem {
 export interface VideoItem {
   id: string;
   title: string;
+  category: VideoCategory | string;
   quality: string;
   duration: string;
   posterUrl: string;
@@ -23,12 +25,16 @@ export interface VideoItem {
 
 export interface MiniAppSettings {
   watchAdsRequired: number;
+  watchAdTimerSeconds: number;
   downloadAdsRequired: number;
+  downloadAdTimerSeconds: number;
+  forceJoinEnabled: boolean;
   monetagZoneId: string;
 }
 
 export interface DashboardStats {
   totalVideos: number;
+  totalUsers: number;
   activeVideos: number;
   totalViews: number;
   totalDownloads: number;
