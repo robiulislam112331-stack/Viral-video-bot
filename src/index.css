@@ -9,9 +9,9 @@
 @layer base {
   html {
     font-family: var(--font-sans);
-    background-color: #0A0B0E;
-    color: #F3F4F6;
-    color-scheme: dark;
+    background-color: #F2F4F7;
+    color: #111827;
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3, .font-display {
@@ -23,21 +23,122 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle dark cinema scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* MoneyFlex 3D Raised White Card */
+.mf-card-3d {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAFBFD 100%);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.06),
+    0 4px 0 #E2E7EE,
+    inset 0 1px 0 #FFFFFF;
 }
 
-::-webkit-scrollbar-track {
-  background: #0A0B0E;
+/* MoneyFlex 3D Raised Pressable Button (White Card) */
+.mf-btn-3d {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F7F9FC 100%);
+  border-radius: 20px;
+  border: 1px solid #EDF1F6;
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.07),
+    0 4px 0 #DCE2EB,
+    inset 0 1px 0 #FFFFFF;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-::-webkit-scrollbar-thumb {
-  background: #232732;
-  border-radius: 4px;
+.mf-btn-3d:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 20px rgba(15, 23, 42, 0.09),
+    0 5px 0 #DCE2EB,
+    inset 0 1px 0 #FFFFFF;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #333847;
+.mf-btn-3d:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 3px 8px rgba(15, 23, 42, 0.05),
+    0 1px 0 #DCE2EB,
+    inset 0 1px 0 #FFFFFF;
+}
+
+/* MoneyFlex Light Grey Icon Circle */
+.mf-icon-circle {
+  background: linear-gradient(180deg, #F3F5F8 0%, #E9EDF3 100%);
+  color: #00944A;
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.95),
+    0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+/* Main Green #00944A 3D Button */
+.mf-btn-green-3d {
+  background: linear-gradient(180deg, #00A854 0%, #00944A 100%);
+  color: #FFFFFF;
+  border-radius: 20px;
+  box-shadow:
+    0 8px 18px rgba(0, 148, 74, 0.25),
+    0 4px 0 #006633,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.15s ease;
+}
+
+.mf-btn-green-3d:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.mf-btn-green-3d:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    0 3px 8px rgba(0, 148, 74, 0.2),
+    0 1px 0 #006633,
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.mf-btn-green-3d:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Outline 3D Button */
+.mf-btn-outline-3d {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F7FBF9 100%);
+  color: #00944A;
+  border: 1.5px solid #00944A;
+  border-radius: 20px;
+  box-shadow:
+    0 6px 14px rgba(0, 148, 74, 0.08),
+    0 4px 0 #CBE6D6,
+    inset 0 1px 0 #FFFFFF;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mf-btn-outline-3d:hover:not(:disabled) {
+  background: #F3FAF6;
+}
+
+.mf-btn-outline-3d:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    0 2px 6px rgba(0, 148, 74, 0.06),
+    0 1px 0 #CBE6D6,
+    inset 0 1px 0 #FFFFFF;
+}
+
+.mf-btn-outline-3d:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-btn-3d,
+  .mf-btn-green-3d,
+  .mf-btn-outline-3d {
+    transition: none;
+  }
 }

@@ -22,6 +22,7 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.resolve(__dirname, 'data');
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const STORE_PATH = path.resolve(DATA_DIR, 'cinevault_store.json');
+const REWARDBOX_PATH = path.resolve(DATA_DIR, 'rewardbox_users.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -226,6 +227,29 @@ function saveStore(store: StoreSchema): void {
 
 let store: StoreSchema = loadStore();
 
+type RewardBoxUserMap = Record<string, unknown>;
+
+function loadRewardBoxUsers(): RewardBoxUserMap {
+  if (!fs.existsSync(REWARDBOX_PATH)) return {};
+  try {
+    const raw = fs.readFileSync(REWARDBOX_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as RewardBoxUserMap)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRewardBoxUsers(users: RewardBoxUserMap): void {
+  const tempPath = `${REWARDBOX_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(users, null, 2), 'utf-8');
+  fs.renameSync(tempPath, REWARDBOX_PATH);
+}
+
+let rewardBoxUsers: RewardBoxUserMap = loadRewardBoxUsers();
+
 // --- Security Helpers ---
 
 function signValue(payload: string): string {
@@ -393,6 +417,30 @@ async function startServer() {
       video.downloads += 1;
       saveStore(store);
     }
+    res.json({ ok: true });
+  });
+
+  // --- Reward Box User State Sync API ---
+
+  app.get('/api/rewardbox/state', (req, res) => {
+    const uid =
+      typeof req.query?.uid === 'string' && req.query.uid.trim()
+        ? req.query.uid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
+        : '74920184';
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ state: rewardBoxUsers[uid] ?? null });
+  });
+
+  app.put('/api/rewardbox/state', (req, res) => {
+    const incoming = req.body?.state;
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      res.status(400).json({ error: 'Invalid state payload.' });
+      return;
+    }
+    const rawUid = typeof incoming.userId === 'string' ? incoming.userId : '74920184';
+    const uid = rawUid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || '74920184';
+    rewardBoxUsers[uid] = incoming;
+    saveRewardBoxUsers(rewardBoxUsers);
     res.json({ ok: true });
   });
 
