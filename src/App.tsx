@@ -45,24 +45,12 @@ function loadLocalEarnMoneyState(
   }
 }
 
-interface VerifyMembershipResponse {
-  verified: boolean;
-  joinedWaincomesite: boolean;
-  joinedPremiumApps: boolean;
-  missing: string[];
-  message: string | null;
-}
-
 const EarnMoneyApp: React.FC = () => {
   const [tgUser] = useState(() => initTelegramWebApp());
   const [state, setState] = useState<EarnMoneyState>(() =>
     loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl)
   );
-  const [membershipStatus, setMembershipStatus] = useState<'checking' | 'locked' | 'verified'>(
-    'checking'
-  );
-  const [verifyingMembership, setVerifyingMembership] = useState(false);
-  const [gateAlert, setGateAlert] = useState<string | null>(null);
+  const [enteredApp, setEnteredApp] = useState(false);
 
   const [activeTab, setActiveTab] = useState<EarnMoneyTab>('home');
   const [activeModal, setActiveModal] = useState<ModalType>(null);
@@ -109,73 +97,6 @@ const EarnMoneyApp: React.FC = () => {
     [persistState]
   );
 
-  const checkMembershipOnServer = useCallback(
-    async (showErrorOnFail: boolean): Promise<boolean> => {
-      try {
-        const res = await fetch('/api/earnmoney/verify-membership', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: tgUser.id,
-            isTelegramUser: tgUser.isTelegramUser,
-          }),
-        });
-        if (!res.ok) throw new Error('Verification request failed');
-        const data = (await res.json()) as VerifyMembershipResponse;
-
-        setState((prev) => {
-          const updated: EarnMoneyState = {
-            ...prev,
-            joinedWaincomesite: Boolean(data.joinedWaincomesite),
-            joinedPremiumApps: Boolean(data.joinedPremiumApps),
-          };
-          try {
-            window.localStorage.setItem(
-              `${STORAGE_PREFIX}${tgUser.id}`,
-              JSON.stringify(updated)
-            );
-          } catch {
-            // ignore
-          }
-          return updated;
-        });
-
-        if (data.verified) {
-          setMembershipStatus('verified');
-          setGateAlert(null);
-          return true;
-        }
-
-        setMembershipStatus('locked');
-        if (showErrorOnFail) {
-          setGateAlert(
-            data.message ||
-              'Please join both channels. You have not joined: @waincomesite / @premiumapps5462'
-          );
-        }
-        return false;
-      } catch {
-        let bothLocal = false;
-        setState((prev) => {
-          bothLocal = prev.joinedWaincomesite && prev.joinedPremiumApps;
-          return prev;
-        });
-        if (bothLocal) {
-          setMembershipStatus('verified');
-          return true;
-        }
-        setMembershipStatus('locked');
-        if (showErrorOnFail) {
-          setGateAlert(
-            'Please join both channels. You have not joined: @waincomesite / @premiumapps5462'
-          );
-        }
-        return false;
-      }
-    },
-    [tgUser.id, tgUser.isTelegramUser]
-  );
-
   useEffect(() => {
     let active = true;
     const params = new URLSearchParams({
@@ -214,28 +135,12 @@ const EarnMoneyApp: React.FC = () => {
       } catch {
         // fallback already initialized at 0
       }
-
-      if (active) {
-        await checkMembershipOnServer(false);
-      }
     })();
 
     return () => {
       active = false;
     };
-  }, [checkMembershipOnServer, tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        void checkMembershipOnServer(true);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [checkMembershipOnServer]);
+  }, [tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
 
   useEffect(() => {
     if (activeTab === 'withdraw' && scrollHistoryQueued) {
@@ -315,7 +220,6 @@ const EarnMoneyApp: React.FC = () => {
   };
 
   const handleJoinChannel = (channel: 'waincomesite' | 'premiumapps') => {
-    setGateAlert(null);
     updateState((prev) => ({
       ...prev,
       joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
@@ -331,14 +235,10 @@ const EarnMoneyApp: React.FC = () => {
     });
   };
 
-  const handleVerifyGate = async () => {
-    setVerifyingMembership(true);
-    setGateAlert(null);
-    const ok = await checkMembershipOnServer(true);
-    setVerifyingMembership(false);
-    if (ok) {
-      notify('Both channels verified! Welcome to Earn Money.');
-    }
+  const handleVerifyGate = () => {
+    setActiveTab('home');
+    setEnteredApp(true);
+    notify('Welcome to Earn Money!');
   };
 
   const handleVerifyActivate = () => {
@@ -399,16 +299,13 @@ const EarnMoneyApp: React.FC = () => {
     };
   };
 
-  if (membershipStatus !== 'verified') {
+  if (!enteredApp) {
     return (
       <ForceJoinGate
-        checkingInitial={membershipStatus === 'checking'}
-        verifying={verifyingMembership}
         joinedWaincomesite={state.joinedWaincomesite}
         joinedPremiumApps={state.joinedPremiumApps}
-        alertMessage={gateAlert}
         onJoinChannel={handleJoinChannel}
-        onVerifyMembership={() => void handleVerifyGate()}
+        onVerifyMembership={handleVerifyGate}
       />
     );
   }

@@ -813,7 +813,7 @@ async function startServer() {
         if (botToken) {
           await telegramBotApiCall(botToken, 'sendMessage', {
             chat_id: chatId,
-            text: 'Welcome to Earn Money 🎁\nTo use bot, you must join our 2 official channels first.',
+            text: 'Welcome to Earn Money 🎁\nJoin our 2 official channels to stay updated.',
             reply_markup: {
               inline_keyboard: [
                 [
@@ -829,38 +829,24 @@ async function startServer() {
     }
 
     if (update?.callback_query?.id && update.callback_query.data === 'verify_membership') {
-      const uid = update.callback_query.from?.id
-        ? String(update.callback_query.from.id).replace(/[^0-9]/g, '')
-        : '';
       const chatId = update.callback_query.message?.chat?.id;
-      const result = await evaluateForceJoinMembership(uid, true);
 
       if (botToken) {
-        if (!result.verified) {
-          await telegramBotApiCall(botToken, 'answerCallbackQuery', {
-            callback_query_id: update.callback_query.id,
-            text:
-              result.message ||
-              'Please join both channels. You have not joined: @waincomesite / @premiumapps5462',
-            show_alert: true,
+        await telegramBotApiCall(botToken, 'answerCallbackQuery', {
+          callback_query_id: update.callback_query.id,
+          text: 'Opening Earn Money...',
+          show_alert: false,
+        });
+        if (chatId) {
+          await telegramBotApiCall(botToken, 'sendMessage', {
+            chat_id: chatId,
+            text: '✅ Welcome to Earn Money! Tap below to open:',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: 'Open Earn Money 🎁', web_app: { url: appBaseUrl } }],
+              ],
+            },
           });
-        } else {
-          await telegramBotApiCall(botToken, 'answerCallbackQuery', {
-            callback_query_id: update.callback_query.id,
-            text: 'Verification complete! Opening Earn Money...',
-            show_alert: false,
-          });
-          if (chatId) {
-            await telegramBotApiCall(botToken, 'sendMessage', {
-              chat_id: chatId,
-              text: '✅ Channels verified! Tap below to open Earn Money:',
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: 'Open Earn Money 🎁', web_app: { url: appBaseUrl } }],
-                ],
-              },
-            });
-          }
         }
       }
     }
