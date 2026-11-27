@@ -1,14 +1,14 @@
 import React from 'react';
 import { ClipboardCheck, Home, Users, Wallet } from 'lucide-react';
-import type { RewardTab } from '../../types/rewardBox';
+import type { EarnMoneyTab } from '../../types/earnMoney';
 
 interface BottomNavProps {
-  activeTab: RewardTab;
-  onSelectTab: (tab: RewardTab) => void;
+  activeTab: EarnMoneyTab;
+  onSelectTab: (tab: EarnMoneyTab) => void;
 }
 
 const NAV_ITEMS: {
-  id: RewardTab;
+  id: EarnMoneyTab;
   label: string;
   Icon: React.ComponentType<{ className?: string }>;
 }[] = [

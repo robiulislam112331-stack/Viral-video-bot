@@ -31,8 +31,8 @@ interface TelegramWebAppWindow extends Window {
   show_12118221?: () => Promise<unknown>;
 }
 
-export const DEFAULT_AVATAR = '/src/assets/images/rewardbox_avatar_1795708537961.jpg';
-const GUEST_UID_KEY = 'rewardbox_guest_uid';
+export const DEFAULT_AVATAR = '/src/assets/images/earnmoney_avatar_1795708537961.jpg';
+const GUEST_UID_KEY = 'earnmoney_guest_uid';
 
 function getOrCreateGuestUid(): string {
   try {
@@ -83,7 +83,7 @@ export function initTelegramWebApp(): TelegramUserInfo {
 
   return {
     id: resolvedId,
-    name: fullName || user?.username || 'Reward Box User',
+    name: fullName || user?.username || 'Earn Money User',
     avatarUrl: user?.photo_url || DEFAULT_AVATAR,
     isTelegramUser: hasTelegramId,
     referrerId: extractReferrerId(tg?.initDataUnsafe?.start_param),

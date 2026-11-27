@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, ShieldCheck, Wallet, XCircle } from 'lucide-react';
-import type { RewardBoxState } from '../../types/rewardBox';
+import type { EarnMoneyState } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 interface WithdrawViewProps {
-  state: RewardBoxState;
+  state: EarnMoneyState;
   historyRef: React.RefObject<HTMLElement | null>;
   onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onSubmitWithdraw: (amount: number, address: string) => { ok: boolean; message: string };

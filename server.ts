@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.resolve(__dirname, 'data');
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const STORE_PATH = path.resolve(DATA_DIR, 'cinevault_store.json');
-const REWARDBOX_PATH = path.resolve(DATA_DIR, 'rewardbox_users.json');
+const EARNMONEY_PATH = path.resolve(DATA_DIR, 'earnmoney_users.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -227,7 +227,7 @@ function saveStore(store: StoreSchema): void {
 
 let store: StoreSchema = loadStore();
 
-interface ServerRewardBoxState {
+interface ServerEarnMoneyState {
   userId: string;
   userName: string;
   userAvatar: string;
@@ -248,7 +248,6 @@ interface ServerRewardBoxState {
   joinedWaincomesite: boolean;
   joinedPremiumApps: boolean;
   activateAdsDone: number;
-  spinUsedToday: boolean;
   bonusTasks: Array<{
     id: string;
     title: string;
@@ -275,17 +274,17 @@ interface ServerRewardBoxState {
   }>;
 }
 
-type RewardBoxUserMap = Record<string, ServerRewardBoxState>;
+type EarnMoneyUserMap = Record<string, ServerEarnMoneyState>;
 
-function createZeroRewardBoxUser(
+function createZeroEarnMoneyUser(
   userId: string,
   userName: string,
   userAvatar: string
-): ServerRewardBoxState {
+): ServerEarnMoneyState {
   return {
     userId,
-    userName: userName || 'Reward Box User',
-    userAvatar: userAvatar || '/src/assets/images/rewardbox_avatar_1795708537961.jpg',
+    userName: userName || 'Earn Money User',
+    userAvatar: userAvatar || '/src/assets/images/earnmoney_avatar_1795708537961.jpg',
     totalBalance: 0,
     referBalance: 0,
     totalIncome: 0,
@@ -303,7 +302,6 @@ function createZeroRewardBoxUser(
     joinedWaincomesite: false,
     joinedPremiumApps: false,
     activateAdsDone: 0,
-    spinUsedToday: false,
     bonusTasks: [
       {
         id: 'task_verify_app',
@@ -319,26 +317,26 @@ function createZeroRewardBoxUser(
   };
 }
 
-function loadRewardBoxUsers(): RewardBoxUserMap {
-  if (!fs.existsSync(REWARDBOX_PATH)) return {};
+function loadEarnMoneyUsers(): EarnMoneyUserMap {
+  if (!fs.existsSync(EARNMONEY_PATH)) return {};
   try {
-    const raw = fs.readFileSync(REWARDBOX_PATH, 'utf-8');
+    const raw = fs.readFileSync(EARNMONEY_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as RewardBoxUserMap)
+      ? (parsed as EarnMoneyUserMap)
       : {};
   } catch {
     return {};
   }
 }
 
-function saveRewardBoxUsers(users: RewardBoxUserMap): void {
-  const tempPath = `${REWARDBOX_PATH}.${process.pid}.tmp`;
+function saveEarnMoneyUsers(users: EarnMoneyUserMap): void {
+  const tempPath = `${EARNMONEY_PATH}.${process.pid}.tmp`;
   fs.writeFileSync(tempPath, JSON.stringify(users, null, 2), 'utf-8');
-  fs.renameSync(tempPath, REWARDBOX_PATH);
+  fs.renameSync(tempPath, EARNMONEY_PATH);
 }
 
-let rewardBoxUsers: RewardBoxUserMap = loadRewardBoxUsers();
+let earnMoneyUsers: EarnMoneyUserMap = loadEarnMoneyUsers();
 
 // --- Security Helpers ---
 
@@ -510,7 +508,10 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  // --- Reward Box User State Sync API ---
+  // --- Earn Money User State Sync API ---
+
+  const TELEGRAM_BOT_USERNAME =
+    process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, '') || 'moneyxearnbot';
 
   const REQUIRED_FORCE_JOIN_CHANNELS = [
     {
@@ -577,16 +578,16 @@ async function startServer() {
     message: string | null;
     liveChecked: boolean;
   }> {
-    if (!rewardBoxUsers[uid]) {
-      rewardBoxUsers[uid] = createZeroRewardBoxUser(
+    if (!earnMoneyUsers[uid]) {
+      earnMoneyUsers[uid] = createZeroEarnMoneyUser(
         uid,
-        'Reward Box User',
-        '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+        'Earn Money User',
+        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
       );
-      saveRewardBoxUsers(rewardBoxUsers);
+      saveEarnMoneyUsers(earnMoneyUsers);
     }
 
-    const userRecord = rewardBoxUsers[uid];
+    const userRecord = earnMoneyUsers[uid];
     const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
     const canLiveCheck = Boolean(botToken) && isTelegramUser && /^\d{4,20}$/.test(uid);
 
@@ -602,7 +603,7 @@ async function startServer() {
       joinedPremiumApps = pJoined;
       userRecord.joinedWaincomesite = wJoined;
       userRecord.joinedPremiumApps = pJoined;
-      saveRewardBoxUsers(rewardBoxUsers);
+      saveEarnMoneyUsers(earnMoneyUsers);
     }
 
     const missing: string[] = [];
@@ -625,8 +626,8 @@ async function startServer() {
   }
 
   function applyReferralAttribution(uid: string, name: string, refUid: string): void {
-    if (!refUid || refUid === uid || !rewardBoxUsers[refUid]) return;
-    const referrer = rewardBoxUsers[refUid];
+    if (!refUid || refUid === uid || !earnMoneyUsers[refUid]) return;
+    const referrer = earnMoneyUsers[refUid];
     const alreadyListed = referrer.referralsList.some((r) => r.id === `ref_${uid}`);
     if (alreadyListed) return;
 
@@ -639,7 +640,7 @@ async function startServer() {
         .filter(Boolean)
         .slice(0, 2)
         .map((p) => p[0]?.toUpperCase() || '')
-        .join('') || 'RB';
+        .join('') || 'EM';
 
     referrer.referralsInvited += 1;
     referrer.totalReferrals += 1;
@@ -655,7 +656,7 @@ async function startServer() {
     });
   }
 
-  app.get('/api/rewardbox/state', (req, res) => {
+  app.get('/api/earnmoney/state', (req, res) => {
     const rawUid = typeof req.query?.uid === 'string' ? req.query.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     if (!uid) {
@@ -666,25 +667,25 @@ async function startServer() {
     const name =
       typeof req.query?.name === 'string' && req.query.name.trim()
         ? req.query.name.trim().slice(0, 80)
-        : 'Reward Box User';
+        : 'Earn Money User';
     const avatar =
       typeof req.query?.avatar === 'string' && isSafeUrl(req.query.avatar, false)
         ? req.query.avatar.trim()
-        : '/src/assets/images/rewardbox_avatar_1795708537961.jpg';
+        : '/src/assets/images/earnmoney_avatar_1795708537961.jpg';
     const rawRef = typeof req.query?.ref === 'string' ? req.query.ref.trim() : '';
     const refUid = rawRef.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
 
-    if (!rewardBoxUsers[uid]) {
-      rewardBoxUsers[uid] = createZeroRewardBoxUser(uid, name, avatar);
+    if (!earnMoneyUsers[uid]) {
+      earnMoneyUsers[uid] = createZeroEarnMoneyUser(uid, name, avatar);
       applyReferralAttribution(uid, name, refUid);
-      saveRewardBoxUsers(rewardBoxUsers);
+      saveEarnMoneyUsers(earnMoneyUsers);
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ state: rewardBoxUsers[uid] });
+    res.json({ state: earnMoneyUsers[uid] });
   });
 
-  app.put('/api/rewardbox/state', (req, res) => {
+  app.put('/api/earnmoney/state', (req, res) => {
     const incoming = req.body?.state;
     if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
       res.status(400).json({ error: 'Invalid state payload.' });
@@ -698,25 +699,25 @@ async function startServer() {
     }
 
     const base =
-      rewardBoxUsers[uid] ??
-      createZeroRewardBoxUser(
+      earnMoneyUsers[uid] ??
+      createZeroEarnMoneyUser(
         uid,
-        typeof incoming.userName === 'string' ? incoming.userName.slice(0, 80) : 'Reward Box User',
+        typeof incoming.userName === 'string' ? incoming.userName.slice(0, 80) : 'Earn Money User',
         typeof incoming.userAvatar === 'string' && isSafeUrl(incoming.userAvatar, false)
           ? incoming.userAvatar
-          : '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+          : '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
       );
 
-    rewardBoxUsers[uid] = {
+    earnMoneyUsers[uid] = {
       ...base,
-      ...(incoming as Partial<ServerRewardBoxState>),
+      ...(incoming as Partial<ServerEarnMoneyState>),
       userId: uid,
     };
-    saveRewardBoxUsers(rewardBoxUsers);
+    saveEarnMoneyUsers(earnMoneyUsers);
     res.json({ ok: true });
   });
 
-  app.post('/api/rewardbox/mark-channel', (req, res) => {
+  app.post('/api/earnmoney/mark-channel', (req, res) => {
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const channel = req.body?.channel;
@@ -726,29 +727,29 @@ async function startServer() {
       return;
     }
 
-    if (!rewardBoxUsers[uid]) {
-      rewardBoxUsers[uid] = createZeroRewardBoxUser(
+    if (!earnMoneyUsers[uid]) {
+      earnMoneyUsers[uid] = createZeroEarnMoneyUser(
         uid,
-        'Reward Box User',
-        '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+        'Earn Money User',
+        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
       );
     }
 
     if (channel === 'waincomesite') {
-      rewardBoxUsers[uid].joinedWaincomesite = true;
+      earnMoneyUsers[uid].joinedWaincomesite = true;
     } else {
-      rewardBoxUsers[uid].joinedPremiumApps = true;
+      earnMoneyUsers[uid].joinedPremiumApps = true;
     }
-    saveRewardBoxUsers(rewardBoxUsers);
+    saveEarnMoneyUsers(earnMoneyUsers);
 
     res.json({
       ok: true,
-      joinedWaincomesite: rewardBoxUsers[uid].joinedWaincomesite,
-      joinedPremiumApps: rewardBoxUsers[uid].joinedPremiumApps,
+      joinedWaincomesite: earnMoneyUsers[uid].joinedWaincomesite,
+      joinedPremiumApps: earnMoneyUsers[uid].joinedPremiumApps,
     });
   });
 
-  app.post('/api/rewardbox/verify-membership', async (req, res) => {
+  app.post('/api/earnmoney/verify-membership', async (req, res) => {
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     if (!uid) {
@@ -766,40 +767,26 @@ async function startServer() {
     });
   });
 
-  app.post('/api/telegram/webhook', async (req, res) => {
-    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
-    if (webhookSecret) {
-      const incomingHeader =
-        typeof req.headers['x-telegram-bot-api-secret-token'] === 'string'
-          ? req.headers['x-telegram-bot-api-secret-token']
-          : '';
-      const a = Buffer.from(incomingHeader, 'utf8');
-      const b = Buffer.from(webhookSecret, 'utf8');
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        res.status(401).json({ error: 'Invalid webhook secret token.' });
-        return;
-      }
-    }
-
-    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
-    const update = req.body as {
-      message?: {
-        chat?: { id?: number | string };
-        from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
-        text?: string;
-      };
-      callback_query?: {
-        id: string;
-        from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
-        message?: { chat?: { id?: number | string } };
-        data?: string;
-      };
+  interface TelegramUpdatePayload {
+    update_id?: number;
+    message?: {
+      chat?: { id?: number | string };
+      from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
+      text?: string;
     };
+    callback_query?: {
+      id: string;
+      from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
+      message?: { chat?: { id?: number | string } };
+      data?: string;
+    };
+  }
 
-    const appBaseUrl =
-      process.env.APP_URL?.trim() ||
-      `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
-
+  async function processTelegramUpdate(
+    update: TelegramUpdatePayload,
+    botToken: string,
+    appBaseUrl: string
+  ): Promise<void> {
     if (update?.message?.text && update.message.chat?.id && update.message.from?.id) {
       const text = update.message.text.trim();
       const chatId = update.message.chat.id;
@@ -807,26 +794,26 @@ async function startServer() {
       const fullName =
         [update.message.from.first_name, update.message.from.last_name].filter(Boolean).join(' ') ||
         update.message.from.username ||
-        'Reward Box User';
+        'Earn Money User';
 
       if (text.startsWith('/start')) {
         const refMatch = text.match(/ref_([a-zA-Z0-9_-]{4,64})/);
         const refUid = refMatch ? refMatch[1] : '';
 
-        if (uid && !rewardBoxUsers[uid]) {
-          rewardBoxUsers[uid] = createZeroRewardBoxUser(
+        if (uid && !earnMoneyUsers[uid]) {
+          earnMoneyUsers[uid] = createZeroEarnMoneyUser(
             uid,
             fullName,
-            '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+            '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
           );
           applyReferralAttribution(uid, fullName, refUid);
-          saveRewardBoxUsers(rewardBoxUsers);
+          saveEarnMoneyUsers(earnMoneyUsers);
         }
 
         if (botToken) {
           await telegramBotApiCall(botToken, 'sendMessage', {
             chat_id: chatId,
-            text: 'Welcome to Reward Box 🎁\nTo use bot, you must join our 2 official channels first.',
+            text: 'Welcome to Earn Money 🎁\nTo use bot, you must join our 2 official channels first.',
             reply_markup: {
               inline_keyboard: [
                 [
@@ -860,16 +847,16 @@ async function startServer() {
         } else {
           await telegramBotApiCall(botToken, 'answerCallbackQuery', {
             callback_query_id: update.callback_query.id,
-            text: 'Verification complete! Opening Reward Box...',
+            text: 'Verification complete! Opening Earn Money...',
             show_alert: false,
           });
           if (chatId) {
             await telegramBotApiCall(botToken, 'sendMessage', {
               chat_id: chatId,
-              text: '✅ Channels verified! Tap below to open Reward Box:',
+              text: '✅ Channels verified! Tap below to open Earn Money:',
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: 'Open Reward Box 🎁', web_app: { url: appBaseUrl } }],
+                  [{ text: 'Open Earn Money 🎁', web_app: { url: appBaseUrl } }],
                 ],
               },
             });
@@ -877,7 +864,47 @@ async function startServer() {
         }
       }
     }
+  }
 
+  app.get('/api/telegram/bot-info', async (_req, res) => {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    let liveBotUsername: string | null = null;
+    if (botToken) {
+      const me = await telegramBotApiCall<{ username?: string }>(botToken, 'getMe', {});
+      if (me.ok && me.result?.username) {
+        liveBotUsername = me.result.username;
+      }
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      botUsername: TELEGRAM_BOT_USERNAME,
+      configured: Boolean(botToken),
+      liveBotUsername,
+    });
+  });
+
+  app.post('/api/telegram/webhook', async (req, res) => {
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+    if (webhookSecret) {
+      const incomingHeader =
+        typeof req.headers['x-telegram-bot-api-secret-token'] === 'string'
+          ? req.headers['x-telegram-bot-api-secret-token']
+          : '';
+      const a = Buffer.from(incomingHeader, 'utf8');
+      const b = Buffer.from(webhookSecret, 'utf8');
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        res.status(401).json({ error: 'Invalid webhook secret token.' });
+        return;
+      }
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    const update = req.body as TelegramUpdatePayload;
+    const appBaseUrl =
+      process.env.APP_URL?.trim() ||
+      `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+
+    await processTelegramUpdate(update, botToken, appBaseUrl);
     res.json({ ok: true });
   });
 
@@ -1217,9 +1244,43 @@ async function startServer() {
     });
   }
 
+  async function startTelegramPollingIfConfigured() {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    if (!botToken || process.env.TELEGRAM_USE_WEBHOOK === 'true') return;
+
+    const appBaseUrl = process.env.APP_URL?.trim() || `http://localhost:${Number(process.env.PORT) || 3000}`;
+    await telegramBotApiCall(botToken, 'deleteWebhook', { drop_pending_updates: false });
+
+    let offset = 0;
+    const poll = async () => {
+      try {
+        const res = await telegramBotApiCall<TelegramUpdatePayload[]>(botToken, 'getUpdates', {
+          offset,
+          timeout: 25,
+          allowed_updates: ['message', 'callback_query'],
+        });
+        if (res.ok && Array.isArray(res.result)) {
+          for (const upd of res.result) {
+            if (typeof upd.update_id === 'number') {
+              offset = Math.max(offset, upd.update_id + 1);
+            }
+            await processTelegramUpdate(upd, botToken, appBaseUrl);
+          }
+        }
+      } catch {
+        // retry after short backoff
+      }
+      setTimeout(() => void poll(), 800);
+    };
+
+    console.log(`Telegram bot polling active for @${TELEGRAM_BOT_USERNAME}`);
+    void poll();
+  }
+
   const PORT = Number(process.env.PORT) || 3000;
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`CineVault Mini App listening on http://0.0.0.0:${PORT}`);
+    console.log(`Earn Money Mini App (@${TELEGRAM_BOT_USERNAME}) listening on http://0.0.0.0:${PORT}`);
+    void startTelegramPollingIfConfigured();
   });
 }
 

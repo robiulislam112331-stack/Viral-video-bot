@@ -3,41 +3,35 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardList,
-  Disc3,
   Headphones,
   Home,
   Lock,
   PlayCircle,
   Send,
   ShieldCheck,
-  Sparkles,
   Users,
   Wallet,
   X,
 } from 'lucide-react';
-import type { BonusTaskItem, ModalType, RewardBoxState, RewardTab } from '../../types/rewardBox';
+import type { BonusTaskItem, EarnMoneyState, EarnMoneyTab, ModalType } from '../../types/earnMoney';
 import { openExternalTelegramLink, triggerMonetagAd } from '../../utils/telegram';
 
 interface ModalsProps {
   activeModal: ModalType;
-  state: RewardBoxState;
+  state: EarnMoneyState;
   onClose: () => void;
   onClaimAdSlot: () => void;
-  onClaimSpin: (rewardUsdt: number) => void;
   onAddTask: (task: Omit<BonusTaskItem, 'id' | 'completed'>) => void;
-  onNavigateTab: (tab: RewardTab, scrollToHistory?: boolean) => void;
+  onNavigateTab: (tab: EarnMoneyTab, scrollToHistory?: boolean) => void;
   onOpenModal: (modal: ModalType) => void;
   onNotify: (msg: string) => void;
 }
-
-const SPIN_REWARDS = [0.005, 0.01, 0.015, 0.02, 0.03, 0.05];
 
 export const Modals: React.FC<ModalsProps> = ({
   activeModal,
   state,
   onClose,
   onClaimAdSlot,
-  onClaimSpin,
   onAddTask,
   onNavigateTab,
   onOpenModal,
@@ -45,10 +39,6 @@ export const Modals: React.FC<ModalsProps> = ({
 }) => {
   const [adSecondsLeft, setAdSecondsLeft] = useState(5);
   const [adStarted, setAdStarted] = useState(false);
-
-  const [spinning, setSpinning] = useState(false);
-  const [spinRotation, setSpinRotation] = useState(0);
-  const [spinWon, setSpinWon] = useState<number | null>(null);
 
   const [supportMsg, setSupportMsg] = useState('');
   const [supportSent, setSupportSent] = useState(false);
@@ -67,10 +57,6 @@ export const Modals: React.FC<ModalsProps> = ({
       setAdStarted(false);
     }
 
-    if (activeModal !== 'spin') {
-      setSpinning(false);
-      setSpinWon(null);
-    }
     if (activeModal !== 'customer_service') {
       setSupportSent(false);
       setSupportMsg('');
@@ -89,22 +75,6 @@ export const Modals: React.FC<ModalsProps> = ({
   }, [activeModal, adStarted, adSecondsLeft]);
 
   if (!activeModal) return null;
-
-  const handleSpinWheel = () => {
-    if (spinning || state.spinUsedToday) return;
-    setSpinning(true);
-    const chosenIdx = Math.floor(Math.random() * SPIN_REWARDS.length);
-    const prize = SPIN_REWARDS[chosenIdx];
-    const segmentAngle = 360 / SPIN_REWARDS.length;
-    const extraTurns = 1440 + chosenIdx * segmentAngle;
-    setSpinRotation((prev) => prev + extraTurns);
-
-    window.setTimeout(() => {
-      setSpinning(false);
-      setSpinWon(prize);
-      onClaimSpin(prize);
-    }, 1800);
-  };
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -282,55 +252,7 @@ export const Modals: React.FC<ModalsProps> = ({
           </div>
         )}
 
-        {/* 3. LUCKY SPIN MODAL */}
-        {activeModal === 'spin' && (
-          <div className="space-y-4 pt-1 text-center">
-            <div className="pr-8 text-left">
-              <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                Daily USDT Spin
-              </h3>
-              <p className="text-xs font-medium text-slate-500">
-                Spin once every 24h for instant USDT BEP20 bonuses.
-              </p>
-            </div>
-
-            <div className="flex flex-col items-center justify-center py-3">
-              <div
-                style={{ transform: `rotate(${spinRotation}deg)` }}
-                className="mf-card-3d flex h-36 w-36 items-center justify-center !rounded-full border-4 border-[#00944A] transition-transform duration-[1800ms] ease-out"
-              >
-                <div className="mf-icon-circle flex h-24 w-24 flex-col items-center justify-center">
-                  <Disc3 className="h-8 w-8 text-[#00944A]" />
-                  <span className="mt-1 font-mono text-[10px] font-extrabold text-[#111827]">
-                    USDT
-                  </span>
-                </div>
-              </div>
-
-              {spinWon !== null && (
-                <div className="mt-4 inline-flex items-center gap-1.5 rounded-2xl bg-emerald-50 px-4 py-2 font-mono text-sm font-extrabold text-[#00944A]">
-                  <Sparkles className="h-4 w-4" />
-                  <span>You won +{spinWon.toFixed(4)} USDT!</span>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              disabled={spinning || state.spinUsedToday}
-              onClick={handleSpinWheel}
-              className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center px-4 py-3 text-sm font-extrabold"
-            >
-              {state.spinUsedToday
-                ? 'Daily Spin Claimed'
-                : spinning
-                  ? 'Spinning...'
-                  : 'Spin & Win USDT'}
-            </button>
-          </div>
-        )}
-
-        {/* 4. CUSTOMER SERVICE MODAL */}
+        {/* 3. CUSTOMER SERVICE MODAL */}
         {activeModal === 'customer_service' && (
           <div className="space-y-4 pt-1">
             <div className="flex items-center gap-3 pr-10">
@@ -462,7 +384,7 @@ export const Modals: React.FC<ModalsProps> = ({
                 Add Your Task
               </h3>
               <p className="text-xs font-medium text-slate-500">
-                Publish a new task to the Reward Box Task Center.
+                Publish a new task to the Earn Money Task Center.
               </p>
             </div>
 
@@ -537,7 +459,7 @@ export const Modals: React.FC<ModalsProps> = ({
           <div className="space-y-4 pt-1">
             <div className="pr-10">
               <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                Reward Box Menu
+                Earn Money Menu
               </h3>
               <p className="text-xs font-medium text-slate-500">
                 USDT BEP20 &middot; 1 USDT = $1.00 USD
@@ -550,8 +472,6 @@ export const Modals: React.FC<ModalsProps> = ({
                 { label: 'Task Center', icon: <ClipboardList className="h-4 w-4" />, action: () => onNavigateTab('tasks') },
                 { label: 'Refer & Earn', icon: <Users className="h-4 w-4" />, action: () => onNavigateTab('refer') },
                 { label: 'Withdraw', icon: <Wallet className="h-4 w-4" />, action: () => onNavigateTab('withdraw') },
-                { label: 'Daily Spin', icon: <Disc3 className="h-4 w-4" />, action: () => onOpenModal('spin') },
-                { label: 'How to Use', icon: <BookOpen className="h-4 w-4" />, action: () => onOpenModal('how_to_use') },
               ].map((entry) => (
                 <button
                   key={entry.label}
@@ -569,6 +489,15 @@ export const Modals: React.FC<ModalsProps> = ({
                 </button>
               ))}
             </div>
+
+            <button
+              type="button"
+              onClick={() => onOpenModal('how_to_use')}
+              className="mf-btn-3d flex min-h-[50px] w-full items-center justify-center gap-2.5 px-4 py-2.5 text-xs font-extrabold text-[#111827]"
+            >
+              <BookOpen className="h-4 w-4 text-[#00944A]" />
+              <span>How to Use</span>
+            </button>
 
             <button
               type="button"

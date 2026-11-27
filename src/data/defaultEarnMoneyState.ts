@@ -1,10 +1,10 @@
-import type { RewardBoxState } from '../types/rewardBox';
+import type { EarnMoneyState } from '../types/earnMoney';
 
-export function createInitialRewardBoxState(
+export function createInitialEarnMoneyState(
   userId: string,
   userName: string,
   userAvatar: string
-): RewardBoxState {
+): EarnMoneyState {
   return {
     userId,
     userName,
@@ -26,7 +26,6 @@ export function createInitialRewardBoxState(
     joinedWaincomesite: false,
     joinedPremiumApps: false,
     activateAdsDone: 0,
-    spinUsedToday: false,
     bonusTasks: [
       {
         id: 'task_verify_app',

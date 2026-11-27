@@ -1,32 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
-import { BottomNav } from './components/rewardbox/BottomNav';
-import { ForceJoinGate } from './components/rewardbox/ForceJoinGate';
-import { HomeView } from './components/rewardbox/HomeView';
-import { Modals } from './components/rewardbox/Modals';
-import { ReferView } from './components/rewardbox/ReferView';
-import { TasksView } from './components/rewardbox/TasksView';
-import { TopHeader } from './components/rewardbox/TopHeader';
-import { WithdrawView } from './components/rewardbox/WithdrawView';
-import { createInitialRewardBoxState } from './data/defaultRewardBoxState';
-import type { BonusTaskItem, ModalType, RewardBoxState, RewardTab } from './types/rewardBox';
+import { BottomNav } from './components/earnmoney/BottomNav';
+import { ForceJoinGate } from './components/earnmoney/ForceJoinGate';
+import { HomeView } from './components/earnmoney/HomeView';
+import { Modals } from './components/earnmoney/Modals';
+import { ReferView } from './components/earnmoney/ReferView';
+import { TasksView } from './components/earnmoney/TasksView';
+import { TopHeader } from './components/earnmoney/TopHeader';
+import { WithdrawView } from './components/earnmoney/WithdrawView';
+import { createInitialEarnMoneyState } from './data/defaultEarnMoneyState';
+import type { BonusTaskItem, EarnMoneyState, EarnMoneyTab, ModalType } from './types/earnMoney';
 import { initTelegramWebApp, openExternalTelegramLink } from './utils/telegram';
 
 const TOKEN_KEY = 'cinevault_admin_token';
-const STORAGE_PREFIX = 'rewardbox_user_v2_';
+const STORAGE_PREFIX = 'earnmoney_user_v3_';
 
-function loadLocalRewardBoxState(
+function loadLocalEarnMoneyState(
   userId: string,
   userName: string,
   userAvatar: string
-): RewardBoxState {
-  const fallback = createInitialRewardBoxState(userId, userName, userAvatar);
+): EarnMoneyState {
+  const fallback = createInitialEarnMoneyState(userId, userName, userAvatar);
   try {
-    window.localStorage.removeItem(`rewardbox_state_v1_${userId}`);
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${userId}`);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<RewardBoxState>;
+    const parsed = JSON.parse(raw) as Partial<EarnMoneyState>;
     return {
       ...fallback,
       ...parsed,
@@ -54,10 +53,10 @@ interface VerifyMembershipResponse {
   message: string | null;
 }
 
-const RewardBoxApp: React.FC = () => {
+const EarnMoneyApp: React.FC = () => {
   const [tgUser] = useState(() => initTelegramWebApp());
-  const [state, setState] = useState<RewardBoxState>(() =>
-    loadLocalRewardBoxState(tgUser.id, tgUser.name, tgUser.avatarUrl)
+  const [state, setState] = useState<EarnMoneyState>(() =>
+    loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl)
   );
   const [membershipStatus, setMembershipStatus] = useState<'checking' | 'locked' | 'verified'>(
     'checking'
@@ -65,7 +64,7 @@ const RewardBoxApp: React.FC = () => {
   const [verifyingMembership, setVerifyingMembership] = useState(false);
   const [gateAlert, setGateAlert] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<RewardTab>('home');
+  const [activeTab, setActiveTab] = useState<EarnMoneyTab>('home');
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [scrollHistoryQueued, setScrollHistoryQueued] = useState(false);
@@ -83,14 +82,14 @@ const RewardBoxApp: React.FC = () => {
     }, 2800);
   };
 
-  const persistState = useCallback((nextState: RewardBoxState) => {
+  const persistState = useCallback((nextState: EarnMoneyState) => {
     try {
       window.localStorage.setItem(`${STORAGE_PREFIX}${nextState.userId}`, JSON.stringify(nextState));
     } catch {
       // ignore localStorage quota errors
     }
 
-    fetch('/api/rewardbox/state', {
+    fetch('/api/earnmoney/state', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: nextState }),
@@ -100,7 +99,7 @@ const RewardBoxApp: React.FC = () => {
   }, []);
 
   const updateState = useCallback(
-    (updater: (prev: RewardBoxState) => RewardBoxState) => {
+    (updater: (prev: EarnMoneyState) => EarnMoneyState) => {
       setState((prev) => {
         const next = updater(prev);
         persistState(next);
@@ -113,7 +112,7 @@ const RewardBoxApp: React.FC = () => {
   const checkMembershipOnServer = useCallback(
     async (showErrorOnFail: boolean): Promise<boolean> => {
       try {
-        const res = await fetch('/api/rewardbox/verify-membership', {
+        const res = await fetch('/api/earnmoney/verify-membership', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -125,7 +124,7 @@ const RewardBoxApp: React.FC = () => {
         const data = (await res.json()) as VerifyMembershipResponse;
 
         setState((prev) => {
-          const updated: RewardBoxState = {
+          const updated: EarnMoneyState = {
             ...prev,
             joinedWaincomesite: Boolean(data.joinedWaincomesite),
             joinedPremiumApps: Boolean(data.joinedPremiumApps),
@@ -156,7 +155,6 @@ const RewardBoxApp: React.FC = () => {
         }
         return false;
       } catch {
-        // Safe fail-closed check against local state if network hiccups
         let bothLocal = false;
         setState((prev) => {
           bothLocal = prev.joinedWaincomesite && prev.joinedPremiumApps;
@@ -178,7 +176,6 @@ const RewardBoxApp: React.FC = () => {
     [tgUser.id, tgUser.isTelegramUser]
   );
 
-  // Hydrate user state + enforce Force Join check on every open
   useEffect(() => {
     let active = true;
     const params = new URLSearchParams({
@@ -192,12 +189,12 @@ const RewardBoxApp: React.FC = () => {
 
     (async () => {
       try {
-        const stateRes = await fetch(`/api/rewardbox/state?${params.toString()}`);
+        const stateRes = await fetch(`/api/earnmoney/state?${params.toString()}`);
         if (active && stateRes.ok) {
-          const data = (await stateRes.json()) as { state?: RewardBoxState };
+          const data = (await stateRes.json()) as { state?: EarnMoneyState };
           if (data?.state) {
-            const nextMerged: RewardBoxState = {
-              ...createInitialRewardBoxState(tgUser.id, tgUser.name, tgUser.avatarUrl),
+            const nextMerged: EarnMoneyState = {
+              ...createInitialEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl),
               ...data.state,
               userId: tgUser.id,
               userName: tgUser.name,
@@ -228,7 +225,6 @@ const RewardBoxApp: React.FC = () => {
     };
   }, [checkMembershipOnServer, tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
 
-  // Re-check membership whenever user returns to the Mini App
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -250,7 +246,7 @@ const RewardBoxApp: React.FC = () => {
     }
   }, [activeTab, scrollHistoryQueued]);
 
-  const handleNavigateTab = (tab: RewardTab, scrollToHistory = false) => {
+  const handleNavigateTab = (tab: EarnMoneyTab, scrollToHistory = false) => {
     setActiveTab(tab);
     if (tab === 'withdraw' && scrollToHistory) {
       setScrollHistoryQueued(true);
@@ -308,18 +304,8 @@ const RewardBoxApp: React.FC = () => {
     notify('Your custom task has been added to Task Center.');
   };
 
-  const handleClaimSpin = (rewardUsdt: number) => {
-    updateState((prev) => ({
-      ...prev,
-      totalBalance: Number((prev.totalBalance + rewardUsdt).toFixed(4)),
-      totalIncome: Number((prev.totalIncome + rewardUsdt).toFixed(4)),
-      spinUsedToday: true,
-    }));
-    notify(`Spin reward +${rewardUsdt.toFixed(4)} USDT credited!`);
-  };
-
   const handleCopyInviteLink = () => {
-    const inviteLink = `https://t.me/boxreward_bot?start=ref_${state.userId}`;
+    const inviteLink = `https://t.me/moneyxearnbot?start=ref_${state.userId}`;
     try {
       void navigator.clipboard.writeText(inviteLink);
     } catch {
@@ -336,7 +322,7 @@ const RewardBoxApp: React.FC = () => {
       joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
     }));
 
-    fetch('/api/rewardbox/mark-channel', {
+    fetch('/api/earnmoney/mark-channel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: tgUser.id, channel }),
@@ -351,7 +337,7 @@ const RewardBoxApp: React.FC = () => {
     const ok = await checkMembershipOnServer(true);
     setVerifyingMembership(false);
     if (ok) {
-      notify('Both channels verified! Welcome to Reward Box.');
+      notify('Both channels verified! Welcome to Earn Money.');
     }
   };
 
@@ -413,7 +399,6 @@ const RewardBoxApp: React.FC = () => {
     };
   };
 
-  // Full-Screen Force Join Gate hides Home, Tasks, Refer, Withdraw until verified
   if (membershipStatus !== 'verified') {
     return (
       <ForceJoinGate
@@ -488,7 +473,6 @@ const RewardBoxApp: React.FC = () => {
         state={state}
         onClose={() => setActiveModal(null)}
         onClaimAdSlot={handleClaimAdSlot}
-        onClaimSpin={handleClaimSpin}
         onAddTask={handleAddTask}
         onNavigateTab={handleNavigateTab}
         onOpenModal={setActiveModal}
@@ -526,5 +510,5 @@ export default function App() {
     return <AdminPanel adminToken={adminToken} onSetAdminToken={handleSetAdminToken} />;
   }
 
-  return <RewardBoxApp />;
+  return <EarnMoneyApp />;
 }

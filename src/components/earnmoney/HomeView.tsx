@@ -9,11 +9,11 @@ import {
   PlayCircle,
   Users,
 } from 'lucide-react';
-import type { ModalType, RewardBoxState, RewardTab } from '../../types/rewardBox';
+import type { EarnMoneyState, EarnMoneyTab, ModalType } from '../../types/earnMoney';
 
 interface HomeViewProps {
-  state: RewardBoxState;
-  onNavigateTab: (tab: RewardTab, scrollToHistory?: boolean) => void;
+  state: EarnMoneyState;
+  onNavigateTab: (tab: EarnMoneyTab, scrollToHistory?: boolean) => void;
   onOpenModal: (modal: ModalType) => void;
 }
 

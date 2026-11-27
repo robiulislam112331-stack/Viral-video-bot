@@ -67,13 +67,13 @@ export const ForceJoinGate: React.FC<ForceJoinGateProps> = ({
             </div>
 
             <h1 className="mt-4 flex items-center justify-center gap-1.5 font-display text-xl font-extrabold text-[#111827]">
-              <span>Welcome to Reward Box</span>
+              <span>Welcome to Earn Money</span>
               <Gift className="h-5 w-5 text-[#00944A]" aria-hidden="true" />
             </h1>
 
             <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-600">
               {checkingInitial
-                ? 'Checking your membership in our 2 official channels...'
+                ? 'Checking your membership...'
                 : 'To use bot, you must join our 2 official channels first.'}
             </p>
           </div>

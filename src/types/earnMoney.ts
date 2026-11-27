@@ -1,10 +1,9 @@
-export type RewardTab = 'home' | 'tasks' | 'refer' | 'withdraw';
+export type EarnMoneyTab = 'home' | 'tasks' | 'refer' | 'withdraw';
 
 export type ModalType =
   | null
   | 'ad_watch'
   | 'slots_list'
-  | 'spin'
   | 'customer_service'
   | 'how_to_use'
   | 'add_task'
@@ -38,7 +37,7 @@ export interface WithdrawalItem {
   status: 'Completed' | 'Rejected';
 }
 
-export interface RewardBoxState {
+export interface EarnMoneyState {
   userId: string;
   userName: string;
   userAvatar: string;
@@ -62,5 +61,4 @@ export interface RewardBoxState {
   bonusTasks: BonusTaskItem[];
   referralsList: ReferralItem[];
   withdrawHistory: WithdrawalItem[];
-  spinUsedToday: boolean;
 }

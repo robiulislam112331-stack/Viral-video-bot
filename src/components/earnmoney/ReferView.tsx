@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Clock, Copy, Share2, ShieldCheck, Tv, UserPlus, Users } from 'lucide-react';
-import type { ModalType, RewardBoxState } from '../../types/rewardBox';
+import type { EarnMoneyState, ModalType } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 interface ReferViewProps {
-  state: RewardBoxState;
+  state: EarnMoneyState;
   onCopyInviteLink: () => void;
   onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onVerifyActivate: () => void;
@@ -23,10 +23,10 @@ export const ReferView: React.FC<ReferViewProps> = ({
   const [filter, setFilter] = useState<ReferralFilter>('all');
   const [copied, setCopied] = useState(false);
 
-  const inviteLink = `https://t.me/boxreward_bot?start=ref_${state.userId}`;
+  const inviteLink = `https://t.me/moneyxearnbot?start=ref_${state.userId}`;
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
     inviteLink
-  )}&text=${encodeURIComponent('Join Reward Box & earn daily USDT BEP20 rewards!')}`;
+  )}&text=${encodeURIComponent('Join Earn Money & earn daily USDT BEP20 rewards!')}`;
 
   const handleCopy = () => {
     onCopyInviteLink();

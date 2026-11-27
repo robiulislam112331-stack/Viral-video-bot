@@ -1,9 +1,9 @@
 import React from 'react';
 import { CheckCircle2, Flame, PlayCircle, PlusCircle, ShieldCheck } from 'lucide-react';
-import type { BonusTaskItem, ModalType, RewardBoxState } from '../../types/rewardBox';
+import type { BonusTaskItem, EarnMoneyState, ModalType } from '../../types/earnMoney';
 
 interface TasksViewProps {
-  state: RewardBoxState;
+  state: EarnMoneyState;
   onOpenModal: (modal: ModalType) => void;
   onCompleteBonusTask: (task: BonusTaskItem) => void;
 }

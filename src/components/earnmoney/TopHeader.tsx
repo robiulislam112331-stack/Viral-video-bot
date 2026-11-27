@@ -69,15 +69,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: ONLY Menu button */}
+        {/* Right: Earn Money Logo / Menu button */}
         <div className="flex shrink-0 items-center">
           <button
             type="button"
             onClick={onOpenMenu}
-            aria-label="Open menu"
-            className="mf-btn-3d inline-flex h-[42px] w-[42px] items-center justify-center !rounded-full text-[#111827]"
+            aria-label="Open Earn Money menu"
+            className="mf-btn-3d inline-flex min-h-[42px] items-center gap-2 px-3.5 py-2 text-[#111827]"
           >
-            <Menu className="h-5 w-5 text-[#00944A]" />
+            <span className="font-display text-xs font-extrabold tracking-tight text-[#111827]">
+              Earn Money
+            </span>
+            <Menu className="h-4 w-4 text-[#00944A]" />
           </button>
         </div>
       </div>
