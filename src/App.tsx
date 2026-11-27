@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
 import { BottomNav } from './components/rewardbox/BottomNav';
+import { ForceJoinGate } from './components/rewardbox/ForceJoinGate';
 import { HomeView } from './components/rewardbox/HomeView';
 import { Modals } from './components/rewardbox/Modals';
 import { ReferView } from './components/rewardbox/ReferView';
@@ -13,11 +14,16 @@ import type { BonusTaskItem, ModalType, RewardBoxState, RewardTab } from './type
 import { initTelegramWebApp, openExternalTelegramLink } from './utils/telegram';
 
 const TOKEN_KEY = 'cinevault_admin_token';
-const STORAGE_PREFIX = 'rewardbox_state_v1_';
+const STORAGE_PREFIX = 'rewardbox_user_v2_';
 
-function loadLocalRewardBoxState(userId: string, userName: string, userAvatar: string): RewardBoxState {
+function loadLocalRewardBoxState(
+  userId: string,
+  userName: string,
+  userAvatar: string
+): RewardBoxState {
   const fallback = createInitialRewardBoxState(userId, userName, userAvatar);
   try {
+    window.localStorage.removeItem(`rewardbox_state_v1_${userId}`);
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${userId}`);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<RewardBoxState>;
@@ -40,11 +46,25 @@ function loadLocalRewardBoxState(userId: string, userName: string, userAvatar: s
   }
 }
 
+interface VerifyMembershipResponse {
+  verified: boolean;
+  joinedWaincomesite: boolean;
+  joinedPremiumApps: boolean;
+  missing: string[];
+  message: string | null;
+}
+
 const RewardBoxApp: React.FC = () => {
   const [tgUser] = useState(() => initTelegramWebApp());
   const [state, setState] = useState<RewardBoxState>(() =>
     loadLocalRewardBoxState(tgUser.id, tgUser.name, tgUser.avatarUrl)
   );
+  const [membershipStatus, setMembershipStatus] = useState<'checking' | 'locked' | 'verified'>(
+    'checking'
+  );
+  const [verifyingMembership, setVerifyingMembership] = useState(false);
+  const [gateAlert, setGateAlert] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<RewardTab>('home');
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -52,7 +72,6 @@ const RewardBoxApp: React.FC = () => {
 
   const historyRef = useRef<HTMLElement | null>(null);
   const toastTimerRef = useRef<number | null>(null);
-  const hydratedFromServerRef = useRef(false);
 
   const notify = (msg: string) => {
     setToastMsg(msg);
@@ -64,37 +83,7 @@ const RewardBoxApp: React.FC = () => {
     }, 2800);
   };
 
-  useEffect(() => {
-    let active = true;
-    const params = new URLSearchParams({
-      uid: tgUser.id,
-      name: tgUser.name,
-      avatar: tgUser.avatarUrl,
-    });
-
-    fetch(`/api/rewardbox/state?${params.toString()}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { state?: RewardBoxState } | null) => {
-        if (!active || !data?.state) return;
-        setState((prev) => ({
-          ...prev,
-          ...data.state,
-          userId: tgUser.id,
-          userName: tgUser.name,
-          userAvatar: tgUser.avatarUrl,
-        }));
-        hydratedFromServerRef.current = true;
-      })
-      .catch(() => {
-        hydratedFromServerRef.current = true;
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [tgUser.avatarUrl, tgUser.id, tgUser.name]);
-
-  const persistState = (nextState: RewardBoxState) => {
+  const persistState = useCallback((nextState: RewardBoxState) => {
     try {
       window.localStorage.setItem(`${STORAGE_PREFIX}${nextState.userId}`, JSON.stringify(nextState));
     } catch {
@@ -108,15 +97,149 @@ const RewardBoxApp: React.FC = () => {
     }).catch(() => {
       // offline fallback already stored in localStorage
     });
-  };
+  }, []);
 
-  const updateState = (updater: (prev: RewardBoxState) => RewardBoxState) => {
-    setState((prev) => {
-      const next = updater(prev);
-      persistState(next);
-      return next;
+  const updateState = useCallback(
+    (updater: (prev: RewardBoxState) => RewardBoxState) => {
+      setState((prev) => {
+        const next = updater(prev);
+        persistState(next);
+        return next;
+      });
+    },
+    [persistState]
+  );
+
+  const checkMembershipOnServer = useCallback(
+    async (showErrorOnFail: boolean): Promise<boolean> => {
+      try {
+        const res = await fetch('/api/rewardbox/verify-membership', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: tgUser.id,
+            isTelegramUser: tgUser.isTelegramUser,
+          }),
+        });
+        if (!res.ok) throw new Error('Verification request failed');
+        const data = (await res.json()) as VerifyMembershipResponse;
+
+        setState((prev) => {
+          const updated: RewardBoxState = {
+            ...prev,
+            joinedWaincomesite: Boolean(data.joinedWaincomesite),
+            joinedPremiumApps: Boolean(data.joinedPremiumApps),
+          };
+          try {
+            window.localStorage.setItem(
+              `${STORAGE_PREFIX}${tgUser.id}`,
+              JSON.stringify(updated)
+            );
+          } catch {
+            // ignore
+          }
+          return updated;
+        });
+
+        if (data.verified) {
+          setMembershipStatus('verified');
+          setGateAlert(null);
+          return true;
+        }
+
+        setMembershipStatus('locked');
+        if (showErrorOnFail) {
+          setGateAlert(
+            data.message ||
+              'Please join both channels. You have not joined: @waincomesite / @premiumapps5462'
+          );
+        }
+        return false;
+      } catch {
+        // Safe fail-closed check against local state if network hiccups
+        let bothLocal = false;
+        setState((prev) => {
+          bothLocal = prev.joinedWaincomesite && prev.joinedPremiumApps;
+          return prev;
+        });
+        if (bothLocal) {
+          setMembershipStatus('verified');
+          return true;
+        }
+        setMembershipStatus('locked');
+        if (showErrorOnFail) {
+          setGateAlert(
+            'Please join both channels. You have not joined: @waincomesite / @premiumapps5462'
+          );
+        }
+        return false;
+      }
+    },
+    [tgUser.id, tgUser.isTelegramUser]
+  );
+
+  // Hydrate user state + enforce Force Join check on every open
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams({
+      uid: tgUser.id,
+      name: tgUser.name,
+      avatar: tgUser.avatarUrl,
     });
-  };
+    if (tgUser.referrerId) {
+      params.set('ref', tgUser.referrerId);
+    }
+
+    (async () => {
+      try {
+        const stateRes = await fetch(`/api/rewardbox/state?${params.toString()}`);
+        if (active && stateRes.ok) {
+          const data = (await stateRes.json()) as { state?: RewardBoxState };
+          if (data?.state) {
+            const nextMerged: RewardBoxState = {
+              ...createInitialRewardBoxState(tgUser.id, tgUser.name, tgUser.avatarUrl),
+              ...data.state,
+              userId: tgUser.id,
+              userName: tgUser.name,
+              userAvatar: tgUser.avatarUrl,
+            };
+            setState(nextMerged);
+            try {
+              window.localStorage.setItem(
+                `${STORAGE_PREFIX}${tgUser.id}`,
+                JSON.stringify(nextMerged)
+              );
+            } catch {
+              // ignore storage errors
+            }
+          }
+        }
+      } catch {
+        // fallback already initialized at 0
+      }
+
+      if (active) {
+        await checkMembershipOnServer(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [checkMembershipOnServer, tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
+
+  // Re-check membership whenever user returns to the Mini App
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void checkMembershipOnServer(true);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [checkMembershipOnServer]);
 
   useEffect(() => {
     if (activeTab === 'withdraw' && scrollHistoryQueued) {
@@ -152,7 +275,7 @@ const RewardBoxApp: React.FC = () => {
       adsWatchedTotal: prev.adsWatchedTotal + 1,
       activateAdsDone: Math.min(3, prev.activateAdsDone + 1),
     }));
-    notify(`+0.0010 USDT added to your balance!`);
+    notify('+0.0010 USDT added to your balance!');
   };
 
   const handleCompleteBonusTask = (task: BonusTaskItem) => {
@@ -205,12 +328,41 @@ const RewardBoxApp: React.FC = () => {
     notify('Invite link copied to clipboard.');
   };
 
-  const handleVerifyActivate = () => {
+  const handleJoinChannel = (channel: 'waincomesite' | 'premiumapps') => {
+    setGateAlert(null);
     updateState((prev) => ({
       ...prev,
-      joinedWaincomesite: true,
-      joinedPremiumApps: true,
-      activateAdsDone: 3,
+      joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
+      joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
+    }));
+
+    fetch('/api/rewardbox/mark-channel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: tgUser.id, channel }),
+    }).catch(() => {
+      // already updated optimistically
+    });
+  };
+
+  const handleVerifyGate = async () => {
+    setVerifyingMembership(true);
+    setGateAlert(null);
+    const ok = await checkMembershipOnServer(true);
+    setVerifyingMembership(false);
+    if (ok) {
+      notify('Both channels verified! Welcome to Reward Box.');
+    }
+  };
+
+  const handleVerifyActivate = () => {
+    if (!state.joinedWaincomesite || !state.joinedPremiumApps || state.activateAdsDone < 3) {
+      notify('Join both channels and watch 3 ads to activate referral rewards.');
+      return;
+    }
+
+    updateState((prev) => ({
+      ...prev,
       referralActivated: true,
     }));
     notify('Referral rewards verified and active!');
@@ -261,6 +413,21 @@ const RewardBoxApp: React.FC = () => {
     };
   };
 
+  // Full-Screen Force Join Gate hides Home, Tasks, Refer, Withdraw until verified
+  if (membershipStatus !== 'verified') {
+    return (
+      <ForceJoinGate
+        checkingInitial={membershipStatus === 'checking'}
+        verifying={verifyingMembership}
+        joinedWaincomesite={state.joinedWaincomesite}
+        joinedPremiumApps={state.joinedPremiumApps}
+        alertMessage={gateAlert}
+        onJoinChannel={handleJoinChannel}
+        onVerifyMembership={() => void handleVerifyGate()}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F2F4F7] text-[#111827] pb-24">
       <TopHeader
@@ -300,6 +467,7 @@ const RewardBoxApp: React.FC = () => {
           <ReferView
             state={state}
             onCopyInviteLink={handleCopyInviteLink}
+            onJoinChannel={handleJoinChannel}
             onVerifyActivate={handleVerifyActivate}
             onOpenModal={setActiveModal}
           />
@@ -309,6 +477,7 @@ const RewardBoxApp: React.FC = () => {
           <WithdrawView
             state={state}
             historyRef={historyRef}
+            onJoinChannel={handleJoinChannel}
             onSubmitWithdraw={handleSubmitWithdraw}
           />
         )}

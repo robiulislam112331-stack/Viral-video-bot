@@ -2,6 +2,8 @@ export interface TelegramUserInfo {
   id: string;
   name: string;
   avatarUrl: string;
+  isTelegramUser: boolean;
+  referrerId?: string;
 }
 
 interface TelegramWebAppWindow extends Window {
@@ -15,6 +17,7 @@ interface TelegramWebAppWindow extends Window {
       openTelegramLink?: (url: string) => void;
       openLink?: (url: string) => void;
       initDataUnsafe?: {
+        start_param?: string;
         user?: {
           id?: number | string;
           first_name?: string;
@@ -29,6 +32,32 @@ interface TelegramWebAppWindow extends Window {
 }
 
 export const DEFAULT_AVATAR = '/src/assets/images/rewardbox_avatar_1795708537961.jpg';
+const GUEST_UID_KEY = 'rewardbox_guest_uid';
+
+function getOrCreateGuestUid(): string {
+  try {
+    const existing = window.localStorage.getItem(GUEST_UID_KEY);
+    if (existing && /^[0-9]{6,12}$/.test(existing)) {
+      return existing;
+    }
+    const generated = String(Math.floor(10000000 + Math.random() * 89999999));
+    window.localStorage.setItem(GUEST_UID_KEY, generated);
+    return generated;
+  } catch {
+    return String(Math.floor(10000000 + Math.random() * 89999999));
+  }
+}
+
+function extractReferrerId(startParam?: string): string | undefined {
+  const queryRef =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('ref') ||
+        new URLSearchParams(window.location.search).get('startapp')
+      : null;
+  const raw = startParam || queryRef || '';
+  const match = raw.match(/^ref_([a-zA-Z0-9_-]{4,64})$/);
+  return match ? match[1] : undefined;
+}
 
 export function initTelegramWebApp(): TelegramUserInfo {
   const win = window as TelegramWebAppWindow;
@@ -49,11 +78,15 @@ export function initTelegramWebApp(): TelegramUserInfo {
 
   const user = tg?.initDataUnsafe?.user;
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+  const hasTelegramId = Boolean(user?.id);
+  const resolvedId = hasTelegramId ? String(user!.id) : getOrCreateGuestUid();
 
   return {
-    id: user?.id ? String(user.id) : '74920184',
-    name: fullName || user?.username || 'Alex Mercer',
+    id: resolvedId,
+    name: fullName || user?.username || 'Reward Box User',
     avatarUrl: user?.photo_url || DEFAULT_AVATAR,
+    isTelegramUser: hasTelegramId,
+    referrerId: extractReferrerId(tg?.initDataUnsafe?.start_param),
   };
 }
 

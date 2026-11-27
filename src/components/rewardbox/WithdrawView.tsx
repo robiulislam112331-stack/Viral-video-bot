@@ -6,12 +6,14 @@ import { openExternalTelegramLink } from '../../utils/telegram';
 interface WithdrawViewProps {
   state: RewardBoxState;
   historyRef: React.RefObject<HTMLElement | null>;
+  onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onSubmitWithdraw: (amount: number, address: string) => { ok: boolean; message: string };
 }
 
 export const WithdrawView: React.FC<WithdrawViewProps> = ({
   state,
   historyRef,
+  onJoinChannel,
   onSubmitWithdraw,
 }) => {
   const [amountInput, setAmountInput] = useState('');
@@ -100,8 +102,12 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                   meetsMinimum ? 'text-[#00944A]' : 'text-amber-600'
                 }`}
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{meetsMinimum ? 'Qualified' : 'In Progress'}</span>
+                {meetsMinimum ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Clock className="h-3.5 w-3.5" />
+                )}
+                <span>{meetsMinimum ? 'Qualified' : 'Pending'}</span>
               </span>
             </div>
 
@@ -112,8 +118,14 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                   meetsReferrals ? 'text-[#00944A]' : 'text-amber-600'
                 }`}
               >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>Completed ({state.referralsInvited}/5)</span>
+                {meetsReferrals ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Clock className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {meetsReferrals ? 'Completed' : 'Pending'} ({state.referralsInvited}/5)
+                </span>
               </span>
             </div>
 
@@ -122,6 +134,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
+                onJoinChannel('waincomesite');
                 if (openExternalTelegramLink('https://t.me/waincomesite')) {
                   e.preventDefault();
                 }
@@ -132,7 +145,11 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
                 <span>@waincomesite</span>
               </span>
-              <span className="font-extrabold text-[#00944A]">
+              <span
+                className={`font-extrabold ${
+                  state.joinedWaincomesite ? 'text-[#00944A]' : 'text-amber-600'
+                }`}
+              >
                 {state.joinedWaincomesite ? 'Joined' : 'Join Now'}
               </span>
             </a>
@@ -142,6 +159,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
+                onJoinChannel('premiumapps');
                 if (openExternalTelegramLink('https://t.me/premiumapps5462')) {
                   e.preventDefault();
                 }
@@ -152,7 +170,11 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
                 <span>@premiumapps5462</span>
               </span>
-              <span className="font-extrabold text-[#00944A]">
+              <span
+                className={`font-extrabold ${
+                  state.joinedPremiumApps ? 'text-[#00944A]' : 'text-amber-600'
+                }`}
+              >
                 {state.joinedPremiumApps ? 'Joined' : 'Join Now'}
               </span>
             </a>
@@ -256,40 +278,54 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {state.withdrawHistory.map((item) => (
-            <div
-              key={item.id}
-              className="mf-card-3d flex items-center justify-between gap-3 p-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="mf-icon-circle flex h-10 w-10 shrink-0 items-center justify-center">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-mono text-sm font-extrabold text-[#111827] tabular-nums">
-                    -{item.amountUsdt.toFixed(2)} USDT
-                  </p>
-                  <p className="truncate font-mono text-[11px] font-medium text-slate-500">
-                    {item.address} &middot; {item.date}
-                  </p>
-                </div>
-              </div>
-
-              {item.status === 'Completed' ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-[#00944A]">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Completed</span>
-                </span>
-              ) : (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-600">
-                  <XCircle className="h-3.5 w-3.5" />
-                  <span>Rejected</span>
-                </span>
-              )}
+        {state.withdrawHistory.length === 0 ? (
+          <div className="mf-card-3d flex flex-col items-center justify-center p-8 text-center">
+            <div className="mf-icon-circle flex h-12 w-12 items-center justify-center">
+              <Clock className="h-5 w-5" />
             </div>
-          ))}
-        </div>
+            <p className="mt-3 font-display text-sm font-extrabold text-[#111827]">
+              No withdrawals yet
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Your BEP20 withdrawal requests will appear here once submitted.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {state.withdrawHistory.map((item) => (
+              <div
+                key={item.id}
+                className="mf-card-3d flex items-center justify-between gap-3 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="mf-icon-circle flex h-10 w-10 shrink-0 items-center justify-center">
+                    <Clock className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-extrabold text-[#111827] tabular-nums">
+                      -{item.amountUsdt.toFixed(2)} USDT
+                    </p>
+                    <p className="truncate font-mono text-[11px] font-medium text-slate-500">
+                      {item.address} &middot; {item.date}
+                    </p>
+                  </div>
+                </div>
+
+                {item.status === 'Completed' ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-[#00944A]">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Completed</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-600">
+                    <XCircle className="h-3.5 w-3.5" />
+                    <span>Rejected</span>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

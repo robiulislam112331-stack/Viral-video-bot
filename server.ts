@@ -227,7 +227,97 @@ function saveStore(store: StoreSchema): void {
 
 let store: StoreSchema = loadStore();
 
-type RewardBoxUserMap = Record<string, unknown>;
+interface ServerRewardBoxState {
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  totalBalance: number;
+  referBalance: number;
+  totalIncome: number;
+  totalWithdraw: number;
+  dailyAdsCompleted: number;
+  dailyAdsTotal: number;
+  nextSlotNumber: number;
+  dailyCeilingUsdt: number;
+  referralsInvited: number;
+  adsWatchedTotal: number;
+  totalReferrals: number;
+  activeReferrals: number;
+  pendingReferrals: number;
+  referralActivated: boolean;
+  joinedWaincomesite: boolean;
+  joinedPremiumApps: boolean;
+  activateAdsDone: number;
+  spinUsedToday: boolean;
+  bonusTasks: Array<{
+    id: string;
+    title: string;
+    badge: string;
+    rewardUsdt: number;
+    url?: string;
+    completed: boolean;
+  }>;
+  referralsList: Array<{
+    id: string;
+    username: string;
+    initials: string;
+    channelsJoined: number;
+    adsWatched: number;
+    status: 'PENDING' | 'ACTIVE';
+    rewardUsdt: number;
+  }>;
+  withdrawHistory: Array<{
+    id: string;
+    amountUsdt: number;
+    address: string;
+    date: string;
+    status: 'Completed' | 'Rejected';
+  }>;
+}
+
+type RewardBoxUserMap = Record<string, ServerRewardBoxState>;
+
+function createZeroRewardBoxUser(
+  userId: string,
+  userName: string,
+  userAvatar: string
+): ServerRewardBoxState {
+  return {
+    userId,
+    userName: userName || 'Reward Box User',
+    userAvatar: userAvatar || '/src/assets/images/rewardbox_avatar_1795708537961.jpg',
+    totalBalance: 0,
+    referBalance: 0,
+    totalIncome: 0,
+    totalWithdraw: 0,
+    dailyAdsCompleted: 0,
+    dailyAdsTotal: 100,
+    nextSlotNumber: 1,
+    dailyCeilingUsdt: 0.1,
+    referralsInvited: 0,
+    adsWatchedTotal: 0,
+    totalReferrals: 0,
+    activeReferrals: 0,
+    pendingReferrals: 0,
+    referralActivated: false,
+    joinedWaincomesite: false,
+    joinedPremiumApps: false,
+    activateAdsDone: 0,
+    spinUsedToday: false,
+    bonusTasks: [
+      {
+        id: 'task_verify_app',
+        title: 'Verify App',
+        badge: 'Daily',
+        rewardUsdt: 0.2,
+        url: 'https://t.me/premiumapps5462',
+        completed: false,
+      },
+    ],
+    referralsList: [],
+    withdrawHistory: [],
+  };
+}
 
 function loadRewardBoxUsers(): RewardBoxUserMap {
   if (!fs.existsSync(REWARDBOX_PATH)) return {};
@@ -422,13 +512,176 @@ async function startServer() {
 
   // --- Reward Box User State Sync API ---
 
+  const REQUIRED_FORCE_JOIN_CHANNELS = [
+    {
+      key: 'waincomesite' as const,
+      username: '@waincomesite',
+      url: 'https://t.me/waincomesite',
+    },
+    {
+      key: 'premiumapps' as const,
+      username: '@premiumapps5462',
+      url: 'https://t.me/premiumapps5462',
+    },
+  ];
+
+  async function telegramBotApiCall<T = unknown>(
+    botToken: string,
+    method: string,
+    payload: Record<string, unknown>
+  ): Promise<{ ok: boolean; result?: T; description?: string }> {
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return (await response.json()) as { ok: boolean; result?: T; description?: string };
+    } catch {
+      return { ok: false, description: 'Telegram API request failed' };
+    }
+  }
+
+  async function checkLiveTelegramChannelMember(
+    botToken: string,
+    chatUsername: string,
+    telegramUserId: string
+  ): Promise<boolean> {
+    if (!/^\d{4,20}$/.test(telegramUserId)) return false;
+    const res = await telegramBotApiCall<{ status?: string; is_member?: boolean }>(
+      botToken,
+      'getChatMember',
+      {
+        chat_id: chatUsername,
+        user_id: Number(telegramUserId),
+      }
+    );
+    if (!res.ok || !res.result) return false;
+    const st = res.result.status;
+    return (
+      st === 'member' ||
+      st === 'administrator' ||
+      st === 'creator' ||
+      (st === 'restricted' && res.result.is_member === true)
+    );
+  }
+
+  async function evaluateForceJoinMembership(
+    uid: string,
+    isTelegramUser: boolean
+  ): Promise<{
+    verified: boolean;
+    joinedWaincomesite: boolean;
+    joinedPremiumApps: boolean;
+    missing: string[];
+    message: string | null;
+    liveChecked: boolean;
+  }> {
+    if (!rewardBoxUsers[uid]) {
+      rewardBoxUsers[uid] = createZeroRewardBoxUser(
+        uid,
+        'Reward Box User',
+        '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+      );
+      saveRewardBoxUsers(rewardBoxUsers);
+    }
+
+    const userRecord = rewardBoxUsers[uid];
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    const canLiveCheck = Boolean(botToken) && isTelegramUser && /^\d{4,20}$/.test(uid);
+
+    let joinedWaincomesite = Boolean(userRecord.joinedWaincomesite);
+    let joinedPremiumApps = Boolean(userRecord.joinedPremiumApps);
+
+    if (canLiveCheck) {
+      const [wJoined, pJoined] = await Promise.all([
+        checkLiveTelegramChannelMember(botToken, '@waincomesite', uid),
+        checkLiveTelegramChannelMember(botToken, '@premiumapps5462', uid),
+      ]);
+      joinedWaincomesite = wJoined;
+      joinedPremiumApps = pJoined;
+      userRecord.joinedWaincomesite = wJoined;
+      userRecord.joinedPremiumApps = pJoined;
+      saveRewardBoxUsers(rewardBoxUsers);
+    }
+
+    const missing: string[] = [];
+    if (!joinedWaincomesite) missing.push('@waincomesite');
+    if (!joinedPremiumApps) missing.push('@premiumapps5462');
+
+    const verified = missing.length === 0;
+    const message = verified
+      ? null
+      : `Please join both channels. You have not joined: ${missing.join(' / ')}`;
+
+    return {
+      verified,
+      joinedWaincomesite,
+      joinedPremiumApps,
+      missing,
+      message,
+      liveChecked: canLiveCheck,
+    };
+  }
+
+  function applyReferralAttribution(uid: string, name: string, refUid: string): void {
+    if (!refUid || refUid === uid || !rewardBoxUsers[refUid]) return;
+    const referrer = rewardBoxUsers[refUid];
+    const alreadyListed = referrer.referralsList.some((r) => r.id === `ref_${uid}`);
+    if (alreadyListed) return;
+
+    const cleanUsername = `@${
+      name.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || `user_${uid.slice(-4)}`
+    }`;
+    const initials =
+      name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase() || '')
+        .join('') || 'RB';
+
+    referrer.referralsInvited += 1;
+    referrer.totalReferrals += 1;
+    referrer.pendingReferrals += 1;
+    referrer.referralsList.unshift({
+      id: `ref_${uid}`,
+      username: cleanUsername,
+      initials,
+      channelsJoined: 0,
+      adsWatched: 0,
+      status: 'PENDING',
+      rewardUsdt: 0,
+    });
+  }
+
   app.get('/api/rewardbox/state', (req, res) => {
-    const uid =
-      typeof req.query?.uid === 'string' && req.query.uid.trim()
-        ? req.query.uid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
-        : '74920184';
+    const rawUid = typeof req.query?.uid === 'string' ? req.query.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (!uid) {
+      res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+
+    const name =
+      typeof req.query?.name === 'string' && req.query.name.trim()
+        ? req.query.name.trim().slice(0, 80)
+        : 'Reward Box User';
+    const avatar =
+      typeof req.query?.avatar === 'string' && isSafeUrl(req.query.avatar, false)
+        ? req.query.avatar.trim()
+        : '/src/assets/images/rewardbox_avatar_1795708537961.jpg';
+    const rawRef = typeof req.query?.ref === 'string' ? req.query.ref.trim() : '';
+    const refUid = rawRef.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+
+    if (!rewardBoxUsers[uid]) {
+      rewardBoxUsers[uid] = createZeroRewardBoxUser(uid, name, avatar);
+      applyReferralAttribution(uid, name, refUid);
+      saveRewardBoxUsers(rewardBoxUsers);
+    }
+
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ state: rewardBoxUsers[uid] ?? null });
+    res.json({ state: rewardBoxUsers[uid] });
   });
 
   app.put('/api/rewardbox/state', (req, res) => {
@@ -437,10 +690,194 @@ async function startServer() {
       res.status(400).json({ error: 'Invalid state payload.' });
       return;
     }
-    const rawUid = typeof incoming.userId === 'string' ? incoming.userId : '74920184';
-    const uid = rawUid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || '74920184';
-    rewardBoxUsers[uid] = incoming;
+    const rawUid = typeof incoming.userId === 'string' ? incoming.userId : '';
+    const uid = rawUid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (!uid) {
+      res.status(400).json({ error: 'Valid userId is required.' });
+      return;
+    }
+
+    const base =
+      rewardBoxUsers[uid] ??
+      createZeroRewardBoxUser(
+        uid,
+        typeof incoming.userName === 'string' ? incoming.userName.slice(0, 80) : 'Reward Box User',
+        typeof incoming.userAvatar === 'string' && isSafeUrl(incoming.userAvatar, false)
+          ? incoming.userAvatar
+          : '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+      );
+
+    rewardBoxUsers[uid] = {
+      ...base,
+      ...(incoming as Partial<ServerRewardBoxState>),
+      userId: uid,
+    };
     saveRewardBoxUsers(rewardBoxUsers);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/rewardbox/mark-channel', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const channel = req.body?.channel;
+
+    if (!uid || (channel !== 'waincomesite' && channel !== 'premiumapps')) {
+      res.status(400).json({ error: 'Valid uid and channel are required.' });
+      return;
+    }
+
+    if (!rewardBoxUsers[uid]) {
+      rewardBoxUsers[uid] = createZeroRewardBoxUser(
+        uid,
+        'Reward Box User',
+        '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+      );
+    }
+
+    if (channel === 'waincomesite') {
+      rewardBoxUsers[uid].joinedWaincomesite = true;
+    } else {
+      rewardBoxUsers[uid].joinedPremiumApps = true;
+    }
+    saveRewardBoxUsers(rewardBoxUsers);
+
+    res.json({
+      ok: true,
+      joinedWaincomesite: rewardBoxUsers[uid].joinedWaincomesite,
+      joinedPremiumApps: rewardBoxUsers[uid].joinedPremiumApps,
+    });
+  });
+
+  app.post('/api/rewardbox/verify-membership', async (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (!uid) {
+      res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+
+    const isTelegramUser = Boolean(req.body?.isTelegramUser);
+    const result = await evaluateForceJoinMembership(uid, isTelegramUser);
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ...result,
+      channels: REQUIRED_FORCE_JOIN_CHANNELS,
+    });
+  });
+
+  app.post('/api/telegram/webhook', async (req, res) => {
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+    if (webhookSecret) {
+      const incomingHeader =
+        typeof req.headers['x-telegram-bot-api-secret-token'] === 'string'
+          ? req.headers['x-telegram-bot-api-secret-token']
+          : '';
+      const a = Buffer.from(incomingHeader, 'utf8');
+      const b = Buffer.from(webhookSecret, 'utf8');
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        res.status(401).json({ error: 'Invalid webhook secret token.' });
+        return;
+      }
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    const update = req.body as {
+      message?: {
+        chat?: { id?: number | string };
+        from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
+        text?: string;
+      };
+      callback_query?: {
+        id: string;
+        from?: { id?: number | string; first_name?: string; last_name?: string; username?: string };
+        message?: { chat?: { id?: number | string } };
+        data?: string;
+      };
+    };
+
+    const appBaseUrl =
+      process.env.APP_URL?.trim() ||
+      `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
+
+    if (update?.message?.text && update.message.chat?.id && update.message.from?.id) {
+      const text = update.message.text.trim();
+      const chatId = update.message.chat.id;
+      const uid = String(update.message.from.id).replace(/[^0-9]/g, '');
+      const fullName =
+        [update.message.from.first_name, update.message.from.last_name].filter(Boolean).join(' ') ||
+        update.message.from.username ||
+        'Reward Box User';
+
+      if (text.startsWith('/start')) {
+        const refMatch = text.match(/ref_([a-zA-Z0-9_-]{4,64})/);
+        const refUid = refMatch ? refMatch[1] : '';
+
+        if (uid && !rewardBoxUsers[uid]) {
+          rewardBoxUsers[uid] = createZeroRewardBoxUser(
+            uid,
+            fullName,
+            '/src/assets/images/rewardbox_avatar_1795708537961.jpg'
+          );
+          applyReferralAttribution(uid, fullName, refUid);
+          saveRewardBoxUsers(rewardBoxUsers);
+        }
+
+        if (botToken) {
+          await telegramBotApiCall(botToken, 'sendMessage', {
+            chat_id: chatId,
+            text: 'Welcome to Reward Box 🎁\nTo use bot, you must join our 2 official channels first.',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: 'Join Channel 1', url: 'https://t.me/waincomesite' },
+                  { text: 'Join Channel 2', url: 'https://t.me/premiumapps5462' },
+                ],
+                [{ text: '✅ Verify & Continue', callback_data: 'verify_membership' }],
+              ],
+            },
+          });
+        }
+      }
+    }
+
+    if (update?.callback_query?.id && update.callback_query.data === 'verify_membership') {
+      const uid = update.callback_query.from?.id
+        ? String(update.callback_query.from.id).replace(/[^0-9]/g, '')
+        : '';
+      const chatId = update.callback_query.message?.chat?.id;
+      const result = await evaluateForceJoinMembership(uid, true);
+
+      if (botToken) {
+        if (!result.verified) {
+          await telegramBotApiCall(botToken, 'answerCallbackQuery', {
+            callback_query_id: update.callback_query.id,
+            text:
+              result.message ||
+              'Please join both channels. You have not joined: @waincomesite / @premiumapps5462',
+            show_alert: true,
+          });
+        } else {
+          await telegramBotApiCall(botToken, 'answerCallbackQuery', {
+            callback_query_id: update.callback_query.id,
+            text: 'Verification complete! Opening Reward Box...',
+            show_alert: false,
+          });
+          if (chatId) {
+            await telegramBotApiCall(botToken, 'sendMessage', {
+              chat_id: chatId,
+              text: '✅ Channels verified! Tap below to open Reward Box:',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'Open Reward Box 🎁', web_app: { url: appBaseUrl } }],
+                ],
+              },
+            });
+          }
+        }
+      }
+    }
+
     res.json({ ok: true });
   });
 

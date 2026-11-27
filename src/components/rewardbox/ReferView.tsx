@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Copy, Share2, ShieldCheck, Tv, UserPlus, Users } from 'lucide-react';
+import { CheckCircle2, Clock, Copy, Share2, ShieldCheck, Tv, UserPlus, Users } from 'lucide-react';
 import type { ModalType, RewardBoxState } from '../../types/rewardBox';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 interface ReferViewProps {
   state: RewardBoxState;
   onCopyInviteLink: () => void;
+  onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onVerifyActivate: () => void;
   onOpenModal: (modal: ModalType) => void;
 }
@@ -15,6 +16,7 @@ type ReferralFilter = 'all' | 'active' | 'pending';
 export const ReferView: React.FC<ReferViewProps> = ({
   state,
   onCopyInviteLink,
+  onJoinChannel,
   onVerifyActivate,
   onOpenModal,
 }) => {
@@ -40,7 +42,7 @@ export const ReferView: React.FC<ReferViewProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Top 2 3D Cards: Total Referrals 115, Referral Earnings 1.20 USDT */}
+      {/* Top 2 3D Cards: Total Referrals & Referral Earnings */}
       <section className="grid grid-cols-2 gap-3.5">
         <div className="mf-card-3d p-4">
           <div className="flex items-center gap-2">
@@ -151,7 +153,13 @@ export const ReferView: React.FC<ReferViewProps> = ({
             <h2 className="font-display text-base font-extrabold text-[#111827]">
               Activate Referral Rewards
             </h2>
-            <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-[#00944A]">
+            <span
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${
+                state.referralActivated
+                  ? 'bg-emerald-50 text-[#00944A]'
+                  : 'bg-amber-100 text-amber-700'
+              }`}
+            >
               {state.referralActivated ? 'Activated' : 'Action Needed'}
             </span>
           </div>
@@ -162,6 +170,7 @@ export const ReferView: React.FC<ReferViewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
+                onJoinChannel('waincomesite');
                 if (openExternalTelegramLink('https://t.me/waincomesite')) {
                   e.preventDefault();
                 }
@@ -172,10 +181,17 @@ export const ReferView: React.FC<ReferViewProps> = ({
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
                 <span>Join @waincomesite</span>
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{state.joinedWaincomesite ? 'Completed' : 'Join'}</span>
-              </span>
+              {state.joinedWaincomesite ? (
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Completed</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>Join Now</span>
+                </span>
+              )}
             </a>
 
             <a
@@ -183,6 +199,7 @@ export const ReferView: React.FC<ReferViewProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
+                onJoinChannel('premiumapps');
                 if (openExternalTelegramLink('https://t.me/premiumapps5462')) {
                   e.preventDefault();
                 }
@@ -193,10 +210,17 @@ export const ReferView: React.FC<ReferViewProps> = ({
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
                 <span>Join @premiumapps5462</span>
               </span>
-              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{state.joinedPremiumApps ? 'Completed' : 'Join'}</span>
-              </span>
+              {state.joinedPremiumApps ? (
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Completed</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>Join Now</span>
+                </span>
+              )}
             </a>
 
             <button
@@ -235,38 +259,54 @@ export const ReferView: React.FC<ReferViewProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {filteredList.map((ref) => (
-            <div
-              key={ref.id}
-              className="mf-card-3d flex items-center justify-between gap-3 p-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="mf-icon-circle flex h-11 w-11 shrink-0 items-center justify-center font-display text-xs font-extrabold">
-                  {ref.initials}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate font-display text-sm font-extrabold text-[#111827]">
-                    {ref.username}
-                  </p>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500 tabular-nums">
-                    Joined {ref.channelsJoined}/2 Channels &middot; Ads: {ref.adsWatched}/3
-                  </p>
-                </div>
-              </div>
-
-              {ref.status === 'ACTIVE' ? (
-                <span className="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-extrabold text-[#00944A] tabular-nums">
-                  ACTIVE +{ref.rewardUsdt.toFixed(2)} USDT
-                </span>
-              ) : (
-                <span className="shrink-0 rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-extrabold text-amber-700">
-                  PENDING
-                </span>
-              )}
+        {filteredList.length === 0 ? (
+          <div className="mf-card-3d flex flex-col items-center justify-center p-8 text-center">
+            <div className="mf-icon-circle flex h-12 w-12 items-center justify-center">
+              <Users className="h-5 w-5" />
             </div>
-          ))}
-        </div>
+            <p className="mt-3 font-display text-sm font-extrabold text-[#111827]">
+              No referrals yet
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              {state.referralsList.length === 0
+                ? 'Share your invite link above to invite friends and earn USDT.'
+                : 'No referrals match the selected status filter.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {filteredList.map((ref) => (
+              <div
+                key={ref.id}
+                className="mf-card-3d flex items-center justify-between gap-3 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="mf-icon-circle flex h-11 w-11 shrink-0 items-center justify-center font-display text-xs font-extrabold">
+                    {ref.initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-display text-sm font-extrabold text-[#111827]">
+                      {ref.username}
+                    </p>
+                    <p className="mt-0.5 text-xs font-medium text-slate-500 tabular-nums">
+                      Joined {ref.channelsJoined}/2 Channels &middot; Ads: {ref.adsWatched}/3
+                    </p>
+                  </div>
+                </div>
+
+                {ref.status === 'ACTIVE' ? (
+                  <span className="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-extrabold text-[#00944A] tabular-nums">
+                    ACTIVE +{ref.rewardUsdt.toFixed(2)} USDT
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-extrabold text-amber-700">
+                    PENDING
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
