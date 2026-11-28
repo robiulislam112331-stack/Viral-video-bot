@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Clock,
   Coins,
+  Database,
   Edit3,
   Eye,
   LayoutDashboard,
@@ -31,7 +32,6 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_EARNMONEY_CONFIG,
-  EARNMONEY_LIVE_CONFIG_KEY,
   normalizeTaskType,
   TASK_TYPES,
 } from '../data/defaultEarnMoneyState';
@@ -39,6 +39,7 @@ import type { AdminAuthStatus } from '../types';
 import type {
   AdminWithdrawalRecord,
   BonusTaskItem,
+  DatabaseConnectionStatus,
   EarnMoneyConfig,
   EarnMoneyState,
   ReferBonusType,
@@ -68,19 +69,12 @@ interface AdminOverviewResponse {
   users: EarnMoneyState[];
   withdrawals: AdminWithdrawalRecord[];
   stats: AdminStats;
+  dbStatus?: DatabaseConnectionStatus;
 }
 
 interface AdminPanelProps {
   adminToken: string | null;
   onSetAdminToken: (token: string | null) => void;
-}
-
-function broadcastLiveConfig(config: EarnMoneyConfig): void {
-  try {
-    window.localStorage.setItem(EARNMONEY_LIVE_CONFIG_KEY, JSON.stringify(config));
-  } catch {
-    // ignore storage quota errors
-  }
 }
 
 function formatDateTime(iso?: string): string {
@@ -130,6 +124,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   });
   const [users, setUsers] = useState<EarnMoneyState[]>([]);
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
+  const [dbStatus, setDbStatus] = useState<DatabaseConnectionStatus | null>(null);
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Maintenance Mode State (Top of Admin Panel)
@@ -282,7 +277,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     setMaintenanceAdminId(cfg.maintenanceAdminId || '');
 
     setTasks(Array.isArray(cfg.tasks) ? cfg.tasks : []);
-    broadcastLiveConfig(cfg);
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -318,6 +312,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       }
       if (!res.ok) throw new Error('Failed to load admin overview.');
       const data = (await res.json()) as AdminOverviewResponse;
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (data.config) applyConfigToForm(data.config);
       if (data.stats) setStats(data.stats);
       if (Array.isArray(data.users)) setUsers(data.users);
@@ -385,7 +380,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify(payload),
       });
-      const data = (await res.json()) as { config?: EarnMoneyConfig; error?: string };
+      const data = (await res.json()) as {
+        config?: EarnMoneyConfig;
+        error?: string;
+        dbStatus?: DatabaseConnectionStatus;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.config) {
         showToast('err', data.error || 'Failed to save settings.');
         return;
@@ -537,7 +537,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           active: taskActive,
         }),
       });
-      const data = (await res.json()) as { config?: EarnMoneyConfig; error?: string };
+      const data = (await res.json()) as {
+        config?: EarnMoneyConfig;
+        error?: string;
+        dbStatus?: DatabaseConnectionStatus;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.config) {
         showToast('err', data.error || 'Failed to save task.');
         return;
@@ -566,7 +571,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify({ active: nextActive }),
       });
-      const data = (await res.json()) as { config?: EarnMoneyConfig; error?: string };
+      const data = (await res.json()) as {
+        config?: EarnMoneyConfig;
+        dbStatus?: DatabaseConnectionStatus;
+        error?: string;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.config) {
         showToast('err', data.error || 'Could not update task status.');
         return;
@@ -586,7 +596,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         method: 'DELETE',
         headers: { Authorization: `Bearer ${adminToken}` },
       });
-      const data = (await res.json()) as { config?: EarnMoneyConfig; error?: string };
+      const data = (await res.json()) as {
+        config?: EarnMoneyConfig;
+        dbStatus?: DatabaseConnectionStatus;
+        error?: string;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.config) {
         showToast('err', data.error || 'Could not delete task.');
         return;
@@ -636,7 +651,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify({ action, amount }),
       });
-      const data = (await res.json()) as { user?: EarnMoneyState; error?: string };
+      const data = (await res.json()) as {
+        user?: EarnMoneyState;
+        dbStatus?: DatabaseConnectionStatus;
+        error?: string;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.user) {
         showToast('err', data.error || 'Balance update failed.');
         return;
@@ -671,7 +691,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           body: JSON.stringify({ isBlocked: nextBlocked }),
         }
       );
-      const data = (await res.json()) as { user?: EarnMoneyState; error?: string };
+      const data = (await res.json()) as {
+        user?: EarnMoneyState;
+        dbStatus?: DatabaseConnectionStatus;
+        error?: string;
+      };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok || !data.user) {
         showToast('err', data.error || 'Failed to update block status.');
         return;
@@ -713,8 +738,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       );
       const data = (await res.json()) as {
         overview?: AdminOverviewResponse;
+        dbStatus?: DatabaseConnectionStatus;
         error?: string;
       };
+      if (data.dbStatus) setDbStatus(data.dbStatus);
       if (!res.ok) {
         showToast('err', data.error || 'Failed to process withdrawal.');
         return;
@@ -723,6 +750,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         setStats(data.overview.stats);
         setUsers(data.overview.users);
         setWithdrawals(data.overview.withdrawals);
+        if (data.overview.dbStatus) setDbStatus(data.overview.dbStatus);
       } else {
         await fetchOverview();
       }
@@ -824,7 +852,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {dbStatus && (
+              <div
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+                  dbStatus.connected
+                    ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                    : 'bg-red-500/15 border-red-500/40 text-red-300'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {dbStatus.connected
+                    ? 'Database: Connected ✅ Supabase'
+                    : 'Connect Database to Save Permanently'}
+                </span>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => void fetchOverview()}
@@ -907,6 +951,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       )}
 
       <main className="mx-auto max-w-6xl px-4 pt-6 space-y-6">
+        {dbStatus && !dbStatus.connected && (
+          <section className="rounded-2xl border border-red-500/50 bg-red-950/25 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-display text-sm font-extrabold text-red-200">
+                  Connect Database to Save Permanently
+                </p>
+                <p className="text-xs text-red-300/90">
+                  {!dbStatus.configured
+                    ? 'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in AI Studio Settings → Secrets, then run supabase/schema.sql in your Supabase SQL Editor.'
+                    : dbStatus.missingTables && dbStatus.missingTables.length > 0
+                      ? `Supabase connected, but missing tables: ${dbStatus.missingTables.join(', ')}. Run supabase/schema.sql in your Supabase SQL Editor.`
+                      : 'Unable to reach Supabase tables. Verify VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, and run supabase/schema.sql in Supabase SQL Editor.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void fetchOverview()}
+              className="px-3.5 py-2 rounded-xl bg-red-500/20 border border-red-400/40 hover:bg-red-500/30 text-xs font-bold text-red-100 shrink-0"
+            >
+              Recheck Connection
+            </button>
+          </section>
+        )}
+
         {/* TOP SECTION: MAINTENANCE MODE (Always at Top of Admin Panel) */}
         <section
           className={`rounded-2xl border p-5 transition-colors ${

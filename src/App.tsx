@@ -13,7 +13,6 @@ import {
   buildSupportTelegramUrl,
   createInitialEarnMoneyState,
   DEFAULT_EARNMONEY_CONFIG,
-  EARNMONEY_LIVE_CONFIG_KEY,
   formatReferralLink,
   isReferActivationComplete,
   isTaskCompletedForUser,
@@ -27,62 +26,11 @@ import type {
 } from './types/earnMoney';
 import { initTelegramWebApp, openExternalTelegramLink } from './utils/telegram';
 
-const STORAGE_PREFIX = 'earnmoney_user_v3_';
-
-function loadLocalConfig(): EarnMoneyConfig {
-  try {
-    const raw = window.localStorage.getItem(EARNMONEY_LIVE_CONFIG_KEY);
-    if (!raw) return DEFAULT_EARNMONEY_CONFIG;
-    const parsed = JSON.parse(raw) as Partial<EarnMoneyConfig>;
-    return {
-      ...DEFAULT_EARNMONEY_CONFIG,
-      ...parsed,
-      tasks: Array.isArray(parsed.tasks)
-        ? parsed.tasks.filter((t) => t && t.id !== 'task_verify_app')
-        : [],
-    };
-  } catch {
-    return DEFAULT_EARNMONEY_CONFIG;
-  }
-}
-
-function loadLocalEarnMoneyState(
-  userId: string,
-  userName: string,
-  userAvatar: string,
-  config: EarnMoneyConfig
-): EarnMoneyState {
-  const fallback = createInitialEarnMoneyState(userId, userName, userAvatar, config);
-  try {
-    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${userId}`);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<EarnMoneyState>;
-    return {
-      ...fallback,
-      ...parsed,
-      userId,
-      userName: userName || fallback.userName,
-      userAvatar: userAvatar || fallback.userAvatar,
-      bonusTasks: Array.isArray(parsed.bonusTasks)
-        ? parsed.bonusTasks.filter((t) => t && t.id !== 'task_verify_app')
-        : [],
-      referralsList: Array.isArray(parsed.referralsList)
-        ? parsed.referralsList
-        : fallback.referralsList,
-      withdrawHistory: Array.isArray(parsed.withdrawHistory)
-        ? parsed.withdrawHistory
-        : fallback.withdrawHistory,
-    };
-  } catch {
-    return fallback;
-  }
-}
-
 const EarnMoneyApp: React.FC = () => {
   const [tgUser] = useState(() => initTelegramWebApp());
-  const [config, setConfig] = useState<EarnMoneyConfig>(() => loadLocalConfig());
+  const [config, setConfig] = useState<EarnMoneyConfig>(DEFAULT_EARNMONEY_CONFIG);
   const [state, setState] = useState<EarnMoneyState>(() =>
-    loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl, loadLocalConfig())
+    createInitialEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl, DEFAULT_EARNMONEY_CONFIG)
   );
   const [serverIsMaintenanceAdmin, setServerIsMaintenanceAdmin] = useState(false);
   const [enteredApp, setEnteredApp] = useState(false);
@@ -109,22 +57,6 @@ const EarnMoneyApp: React.FC = () => {
       setToastMsg(null);
     }, 2800);
   };
-
-  const cacheState = useCallback((nextState: EarnMoneyState) => {
-    try {
-      window.localStorage.setItem(`${STORAGE_PREFIX}${nextState.userId}`, JSON.stringify(nextState));
-    } catch {
-      // ignore localStorage quota errors
-    }
-  }, []);
-
-  const cacheConfig = useCallback((nextConfig: EarnMoneyConfig) => {
-    try {
-      window.localStorage.setItem(EARNMONEY_LIVE_CONFIG_KEY, JSON.stringify(nextConfig));
-    } catch {
-      // ignore storage quota errors
-    }
-  }, []);
 
   const syncFromServer = useCallback(async () => {
     const params = new URLSearchParams({
@@ -157,7 +89,6 @@ const EarnMoneyApp: React.FC = () => {
       }
       if (data?.config) {
         setConfig(data.config);
-        cacheConfig(data.config);
       }
       if (data?.state) {
         const syncedConfig = data.config || DEFAULT_EARNMONEY_CONFIG;
@@ -176,14 +107,11 @@ const EarnMoneyApp: React.FC = () => {
           userAvatar: data.state.userAvatar || tgUser.avatarUrl,
         };
         setState(nextMerged);
-        cacheState(nextMerged);
       }
     } catch {
       // ignore transient network errors
     }
   }, [
-    cacheConfig,
-    cacheState,
     tgUser.avatarUrl,
     tgUser.firstName,
     tgUser.id,
@@ -201,32 +129,18 @@ const EarnMoneyApp: React.FC = () => {
   useEffect(() => {
     void syncFromServer();
 
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === EARNMONEY_LIVE_CONFIG_KEY && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue) as EarnMoneyConfig;
-          setConfig(parsed);
-          void syncFromServer();
-        } catch {
-          // ignore
-        }
-      }
-    };
-
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         void syncFromServer();
       }
     };
 
-    window.addEventListener('storage', handleStorage);
     document.addEventListener('visibilitychange', handleVisibility);
     const interval = window.setInterval(() => {
       void syncFromServer();
     }, 6000);
 
     return () => {
-      window.removeEventListener('storage', handleStorage);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(interval);
     };
@@ -308,11 +222,9 @@ const EarnMoneyApp: React.FC = () => {
         };
         if (data.config) {
           setConfig(data.config);
-          cacheConfig(data.config);
         }
         if (data.state) {
           setState(data.state);
-          cacheState(data.state);
         }
         if (!res.ok) {
           notify(data.error || 'Unable to claim ad slot.');
@@ -355,11 +267,9 @@ const EarnMoneyApp: React.FC = () => {
         };
         if (data.config) {
           setConfig(data.config);
-          cacheConfig(data.config);
         }
         if (data.state) {
           setState(data.state);
-          cacheState(data.state);
         }
         if (!res.ok) {
           notify(data.error || 'Unable to verify task.');
@@ -394,7 +304,6 @@ const EarnMoneyApp: React.FC = () => {
         }
         if (data.state) {
           setState(data.state);
-          cacheState(data.state);
         }
         notify('Your custom task has been added to Task Center.');
       })
@@ -414,15 +323,11 @@ const EarnMoneyApp: React.FC = () => {
   };
 
   const handleJoinChannel = (channel: 'waincomesite' | 'premiumapps') => {
-    setState((prev) => {
-      const next: EarnMoneyState = {
-        ...prev,
-        joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
-        joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
-      };
-      cacheState(next);
-      return next;
-    });
+    setState((prev) => ({
+      ...prev,
+      joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
+      joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
+    }));
 
     fetch('/api/earnmoney/mark-channel', {
       method: 'POST',
@@ -438,7 +343,6 @@ const EarnMoneyApp: React.FC = () => {
         const data = (await res.json()) as { state?: EarnMoneyState };
         if (data.state) {
           setState(data.state);
-          cacheState(data.state);
         }
       })
       .catch(() => {
@@ -480,7 +384,6 @@ const EarnMoneyApp: React.FC = () => {
         }
         if (data.state) {
           setState(data.state);
-          cacheState(data.state);
         }
         notify('Referral rewards verified and active!');
       })
@@ -552,7 +455,6 @@ const EarnMoneyApp: React.FC = () => {
       }
       if (data.state) {
         setState(data.state);
-        cacheState(data.state);
       }
       notify(`Withdrawal of ${amount.toFixed(2)} USDT submitted to BEP20.`);
       return {

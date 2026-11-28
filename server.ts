@@ -22,10 +22,24 @@ import type {
   AdminWithdrawalRecord,
   AdSlotClaimRecord,
   BonusTaskItem,
+  DatabaseConnectionStatus,
   EarnMoneyConfig,
   EarnMoneyState,
   TaskType,
 } from './src/types/earnMoney.ts';
+import {
+  checkSupabaseConnection,
+  deleteTaskFromSupabase,
+  insertTaskToSupabase,
+  insertWithdrawToSupabase,
+  loadConfigFromSupabase,
+  loadUsersAndClaimsFromSupabase,
+  saveConfigToSupabase,
+  updateTaskInSupabase,
+  updateWithdrawStatusInSupabase,
+  upsertAdSlotClaimToSupabase,
+  upsertUserToSupabase,
+} from './lib/supabaseDb.ts';
 
 dotenv.config();
 
@@ -1121,12 +1135,61 @@ async function startServer() {
     }
   }
 
-  app.get('/api/earnmoney/config', (_req, res) => {
+  let latestDbStatus: DatabaseConnectionStatus = {
+    connected: false,
+    provider: 'Supabase',
+    configured: false,
+    error: 'Connect Database to Save Permanently',
+  };
+
+  async function refreshEarnMoneyStoreFromDatabase(): Promise<DatabaseConnectionStatus> {
+    const status = await checkSupabaseConnection();
+    latestDbStatus = status;
+    if (!status.connected) {
+      return status;
+    }
+    try {
+      const dbConfig = await loadConfigFromSupabase(DEFAULT_EARNMONEY_CONFIG);
+      if (dbConfig) {
+        earnMoneyConfig = dbConfig;
+      }
+      const dbUsersAndClaims = await loadUsersAndClaimsFromSupabase(earnMoneyConfig);
+      if (dbUsersAndClaims) {
+        earnMoneyUsers = dbUsersAndClaims.usersMap;
+        adSlotClaimsList = dbUsersAndClaims.adSlotClaims;
+      }
+      return status;
+    } catch {
+      latestDbStatus = {
+        connected: false,
+        provider: 'Supabase',
+        configured: status.configured,
+        error: 'Connect Database to Save Permanently',
+      };
+      return latestDbStatus;
+    }
+  }
+
+  async function persistUserAndReferrer(user: ServerEarnMoneyState): Promise<void> {
+    if (latestDbStatus.connected) {
+      await upsertUserToSupabase(user);
+      if (user.referredBy && earnMoneyUsers[user.referredBy]) {
+        await upsertUserToSupabase(earnMoneyUsers[user.referredBy]);
+      }
+    } else {
+      saveEarnMoneyUsers(earnMoneyUsers);
+    }
+  }
+
+  app.get('/api/earnmoney/config', async (_req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ config: earnMoneyConfig });
+    res.json({ config: earnMoneyConfig, dbStatus });
   });
 
-  app.get('/api/earnmoney/state', (req, res) => {
+  app.get('/api/earnmoney/state', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
+
     const rawUid = typeof req.query?.uid === 'string' ? req.query.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     if (!uid) {
@@ -1181,7 +1244,7 @@ async function startServer() {
           existing.userAvatar = avatar;
         }
       }
-      saveEarnMoneyUsers(earnMoneyUsers);
+      await persistUserAndReferrer(existing).catch(() => undefined);
 
       res.setHeader('Cache-Control', 'no-store');
       res.json({
@@ -1202,7 +1265,7 @@ async function startServer() {
         lastActiveAt: nowIso,
       });
       applyReferralAttribution(uid, name, refUid);
-      saveEarnMoneyUsers(earnMoneyUsers);
+      await persistUserAndReferrer(earnMoneyUsers[uid]).catch(() => undefined);
 
       res.setHeader('Cache-Control', 'no-store');
       res.json({
@@ -1225,7 +1288,9 @@ async function startServer() {
     });
   });
 
-  app.put('/api/earnmoney/state', (req, res) => {
+  app.put('/api/earnmoney/state', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
+
     const incoming = req.body?.state;
     if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
       res.status(400).json({ error: 'Invalid state payload.' });
@@ -1275,11 +1340,12 @@ async function startServer() {
       userId: uid,
     };
     evaluateReferralProgressAndCredit(earnMoneyUsers[uid]);
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(earnMoneyUsers[uid]).catch(() => undefined);
     res.json({ ok: true, state: syncUserWithConfig(earnMoneyUsers[uid]) });
   });
 
-  app.post('/api/earnmoney/ad-claim', (req, res) => {
+  app.post('/api/earnmoney/ad-claim', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const mode = req.body?.mode === 'click' ? 'click' : 'view';
@@ -1374,7 +1440,11 @@ async function startServer() {
       Number((earnMoneyConfig.premiumAdsBudget - reward).toFixed(4))
     );
     earnMoneyConfig.updatedAt = new Date().toISOString();
-    saveEarnMoneyConfig(earnMoneyConfig);
+    if (latestDbStatus.connected) {
+      await saveConfigToSupabase(earnMoneyConfig);
+    } else {
+      saveEarnMoneyConfig(earnMoneyConfig);
+    }
 
     if (mode === 'view') {
       slotRecord.view_reward_claimed = true;
@@ -1387,14 +1457,18 @@ async function startServer() {
       slotRecord.click_bonus_claimed = true;
     }
     slotRecord.updated_at = new Date().toISOString();
-    saveAdSlotClaims(adSlotClaimsList);
+    if (latestDbStatus.connected) {
+      await upsertAdSlotClaimToSupabase(slotRecord);
+    } else {
+      saveAdSlotClaims(adSlotClaimsList);
+    }
 
     activeUser.totalBalance = Number((activeUser.totalBalance + reward).toFixed(4));
     activeUser.totalIncome = Number((activeUser.totalIncome + reward).toFixed(4));
 
     evaluateReferralProgressAndCredit(activeUser);
     earnMoneyUsers[uid] = activeUser;
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(activeUser);
     res.json({
       state: syncUserWithConfig(activeUser),
       config: earnMoneyConfig,
@@ -1403,7 +1477,8 @@ async function startServer() {
     });
   });
 
-  app.post('/api/earnmoney/tasks/complete', (req, res) => {
+  app.post('/api/earnmoney/tasks/complete', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const taskId = typeof req.body?.taskId === 'string' ? req.body.taskId.trim() : '';
@@ -1484,7 +1559,7 @@ async function startServer() {
 
     evaluateReferralProgressAndCredit(user);
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(user);
     res.json({
       state: syncUserWithConfig(user, now),
       config: earnMoneyConfig,
@@ -1492,7 +1567,8 @@ async function startServer() {
     });
   });
 
-  app.post('/api/earnmoney/tasks/custom', (req, res) => {
+  app.post('/api/earnmoney/tasks/custom', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
@@ -1542,11 +1618,12 @@ async function startServer() {
     };
     user.bonusTasks = [newTask, ...(user.bonusTasks || [])];
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(user);
     res.status(201).json({ state: syncUserWithConfig(user), config: earnMoneyConfig });
   });
 
-  app.post('/api/earnmoney/activate-refer', (req, res) => {
+  app.post('/api/earnmoney/activate-refer', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     if (!uid || !earnMoneyUsers[uid]) {
@@ -1583,11 +1660,12 @@ async function startServer() {
 
     user.referralActivated = true;
     evaluateReferralProgressAndCredit(user);
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(user);
     res.json({ state: syncUserWithConfig(user) });
   });
 
-  app.post('/api/earnmoney/withdraw', (req, res) => {
+  app.post('/api/earnmoney/withdraw', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const amount = Number(req.body?.amount);
@@ -1668,22 +1746,26 @@ async function startServer() {
       year: 'numeric',
     });
 
-    user.withdrawHistory = [
-      {
-        id: `wd_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
-        amountUsdt: Number(amount.toFixed(4)),
-        feePercent: Number(feePercent.toFixed(2)),
-        feeUsdt,
-        netAmountUsdt,
-        address: shortAddr,
-        date: todayLabel,
-        status: 'Pending',
-      },
-      ...(user.withdrawHistory || []),
-    ];
+    const newWd = {
+      id: `wd_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      amountUsdt: Number(amount.toFixed(4)),
+      feePercent: Number(feePercent.toFixed(2)),
+      feeUsdt,
+      netAmountUsdt,
+      address: shortAddr,
+      date: todayLabel,
+      status: 'Pending' as const,
+    };
+
+    user.withdrawHistory = [newWd, ...(user.withdrawHistory || [])];
 
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
+    if (latestDbStatus.connected) {
+      await insertWithdrawToSupabase(uid, newWd);
+      await upsertUserToSupabase(user);
+    } else {
+      saveEarnMoneyUsers(earnMoneyUsers);
+    }
     res.status(201).json({
       state: syncUserWithConfig(user),
       message:
@@ -1693,7 +1775,8 @@ async function startServer() {
     });
   });
 
-  app.post('/api/earnmoney/mark-channel', (req, res) => {
+  app.post('/api/earnmoney/mark-channel', async (req, res) => {
+    await refreshEarnMoneyStoreFromDatabase();
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const channel = req.body?.channel;
@@ -1736,7 +1819,7 @@ async function startServer() {
       earnMoneyUsers[uid].joinedPremiumApps = true;
     }
     evaluateReferralProgressAndCredit(earnMoneyUsers[uid]);
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await persistUserAndReferrer(earnMoneyUsers[uid]);
 
     res.json({
       ok: true,
@@ -1784,6 +1867,8 @@ async function startServer() {
     botToken: string,
     appBaseUrl: string
   ): Promise<void> {
+    await refreshEarnMoneyStoreFromDatabase();
+
     if (update?.message?.text && update.message.chat?.id && update.message.from?.id) {
       const text = update.message.text.trim();
       const chatId = update.message.chat.id;
@@ -1825,7 +1910,7 @@ async function startServer() {
             telegramPhotoFileId: photoFileId,
           });
           applyReferralAttribution(uid, fullName, refUid);
-          saveEarnMoneyUsers(earnMoneyUsers);
+          await persistUserAndReferrer(earnMoneyUsers[uid]);
         } else if (uid && earnMoneyUsers[uid]) {
           const existing = earnMoneyUsers[uid];
           existing.isTelegramUser = true;
@@ -1841,7 +1926,7 @@ async function startServer() {
               existing.userAvatar = `/api/telegram/avatar/${uid}`;
             }
           }
-          saveEarnMoneyUsers(earnMoneyUsers);
+          await persistUserAndReferrer(existing);
         }
 
         if (botToken) {
@@ -1905,7 +1990,7 @@ async function startServer() {
           existing.lastActiveAt = nowIso;
           if (photoFileId) existing.telegramPhotoFileId = photoFileId;
         }
-        saveEarnMoneyUsers(earnMoneyUsers);
+        await persistUserAndReferrer(earnMoneyUsers[cbUid]);
       }
 
       if (botToken) {
@@ -2314,12 +2399,23 @@ async function startServer() {
     };
   }
 
-  app.get('/api/admin/earnmoney/overview', requireAdmin, (_req, res) => {
+  app.get('/api/admin/earnmoney/overview', requireAdmin, async (_req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
     res.setHeader('Cache-Control', 'no-store');
-    res.json(buildEarnMoneyAdminOverview());
+    res.json({ ...buildEarnMoneyAdminOverview(), dbStatus });
   });
 
-  app.put('/api/admin/earnmoney/settings', requireAdmin, (req, res) => {
+  app.put('/api/admin/earnmoney/settings', requireAdmin, async (req, res) => {
+    const dbStatus = await checkSupabaseConnection();
+    latestDbStatus = dbStatus;
+    if (!dbStatus.connected) {
+      res.status(503).json({
+        error: 'Connect Database to Save Permanently',
+        dbStatus,
+      });
+      return;
+    }
+
     const body = (req.body || {}) as Partial<EarnMoneyConfig>;
 
     const botName =
@@ -2531,11 +2627,30 @@ async function startServer() {
 
       updatedAt: new Date().toISOString(),
     };
-    saveEarnMoneyConfig(earnMoneyConfig);
-    res.json({ config: earnMoneyConfig });
+    try {
+      await saveConfigToSupabase(earnMoneyConfig);
+      const refreshed = await loadConfigFromSupabase(DEFAULT_EARNMONEY_CONFIG);
+      if (refreshed) earnMoneyConfig = refreshed;
+      res.json({ config: earnMoneyConfig, dbStatus });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to save settings to Supabase.',
+        dbStatus,
+      });
+    }
   });
 
-  app.post('/api/admin/earnmoney/tasks', requireAdmin, (req, res) => {
+  app.post('/api/admin/earnmoney/tasks', requireAdmin, async (req, res) => {
+    const dbStatus = await checkSupabaseConnection();
+    latestDbStatus = dbStatus;
+    if (!dbStatus.connected) {
+      res.status(503).json({
+        error: 'Connect Database to Save Permanently',
+        dbStatus,
+      });
+      return;
+    }
+
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
     const taskType: TaskType = normalizeTaskType(
       typeof req.body?.taskType === 'string' ? req.body.taskType : undefined,
@@ -2570,16 +2685,31 @@ async function startServer() {
       createdBy: 'admin',
     };
 
-    earnMoneyConfig = {
-      ...earnMoneyConfig,
-      tasks: [newTask, ...earnMoneyConfig.tasks],
-      updatedAt: new Date().toISOString(),
-    };
-    saveEarnMoneyConfig(earnMoneyConfig);
-    res.status(201).json({ task: newTask, config: earnMoneyConfig });
+    try {
+      await insertTaskToSupabase(newTask);
+      const refreshed = await loadConfigFromSupabase(DEFAULT_EARNMONEY_CONFIG);
+      if (refreshed) earnMoneyConfig = refreshed;
+      res.status(201).json({ task: newTask, config: earnMoneyConfig, dbStatus });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to save task to Supabase.',
+        dbStatus,
+      });
+    }
   });
 
-  app.put('/api/admin/earnmoney/tasks/:id', requireAdmin, (req, res) => {
+  app.put('/api/admin/earnmoney/tasks/:id', requireAdmin, async (req, res) => {
+    const dbStatus = await checkSupabaseConnection();
+    latestDbStatus = dbStatus;
+    if (!dbStatus.connected) {
+      res.status(503).json({
+        error: 'Connect Database to Save Permanently',
+        dbStatus,
+      });
+      return;
+    }
+
+    await refreshEarnMoneyStoreFromDatabase();
     const task = earnMoneyConfig.tasks.find((t) => t.id === req.params.id);
     if (!task) {
       res.status(404).json({ error: 'Task not found.' });
@@ -2622,27 +2752,52 @@ async function startServer() {
       task.active = req.body.active;
     }
 
-    earnMoneyConfig.updatedAt = new Date().toISOString();
-    saveEarnMoneyConfig(earnMoneyConfig);
-    res.json({ task, config: earnMoneyConfig });
+    try {
+      await updateTaskInSupabase(task);
+      const refreshed = await loadConfigFromSupabase(DEFAULT_EARNMONEY_CONFIG);
+      if (refreshed) earnMoneyConfig = refreshed;
+      res.json({ task, config: earnMoneyConfig, dbStatus });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to update task in Supabase.',
+        dbStatus,
+      });
+    }
   });
 
-  app.delete('/api/admin/earnmoney/tasks/:id', requireAdmin, (req, res) => {
-    const before = earnMoneyConfig.tasks.length;
-    earnMoneyConfig = {
-      ...earnMoneyConfig,
-      tasks: earnMoneyConfig.tasks.filter((t) => t.id !== req.params.id),
-      updatedAt: new Date().toISOString(),
-    };
-    if (earnMoneyConfig.tasks.length === before) {
+  app.delete('/api/admin/earnmoney/tasks/:id', requireAdmin, async (req, res) => {
+    const dbStatus = await checkSupabaseConnection();
+    latestDbStatus = dbStatus;
+    if (!dbStatus.connected) {
+      res.status(503).json({
+        error: 'Connect Database to Save Permanently',
+        dbStatus,
+      });
+      return;
+    }
+
+    await refreshEarnMoneyStoreFromDatabase();
+    const exists = earnMoneyConfig.tasks.some((t) => t.id === req.params.id);
+    if (!exists) {
       res.status(404).json({ error: 'Task not found.' });
       return;
     }
-    saveEarnMoneyConfig(earnMoneyConfig);
-    res.json({ deleted: req.params.id, config: earnMoneyConfig });
+
+    try {
+      await deleteTaskFromSupabase(req.params.id);
+      const refreshed = await loadConfigFromSupabase(DEFAULT_EARNMONEY_CONFIG);
+      if (refreshed) earnMoneyConfig = refreshed;
+      res.json({ deleted: req.params.id, config: earnMoneyConfig, dbStatus });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to delete task from Supabase.',
+        dbStatus,
+      });
+    }
   });
 
-  app.get('/api/admin/earnmoney/users', requireAdmin, (req, res) => {
+  app.get('/api/admin/earnmoney/users', requireAdmin, async (req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
     const q = typeof req.query?.q === 'string' ? req.query.q.trim().toLowerCase() : '';
     const usersList = Object.values(earnMoneyUsers)
       .filter(isRealTelegramUserRecord)
@@ -2665,10 +2820,16 @@ async function startServer() {
       })
       .map((u) => syncUserWithConfig(u));
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ users: usersList });
+    res.json({ users: usersList, dbStatus });
   });
 
-  app.post('/api/admin/earnmoney/users/:uid/balance', requireAdmin, (req, res) => {
+  app.post('/api/admin/earnmoney/users/:uid/balance', requireAdmin, async (req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
+    if (!dbStatus.connected) {
+      res.status(503).json({ error: 'Connect Database to Save Permanently', dbStatus });
+      return;
+    }
+
     const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const user = earnMoneyUsers[uid];
     if (!user) {
@@ -2691,11 +2852,17 @@ async function startServer() {
     }
 
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
-    res.json({ user: syncUserWithConfig(user) });
+    await upsertUserToSupabase(user);
+    res.json({ user: syncUserWithConfig(user), dbStatus });
   });
 
-  app.post('/api/admin/earnmoney/users/:uid/block', requireAdmin, (req, res) => {
+  app.post('/api/admin/earnmoney/users/:uid/block', requireAdmin, async (req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
+    if (!dbStatus.connected) {
+      res.status(503).json({ error: 'Connect Database to Save Permanently', dbStatus });
+      return;
+    }
+
     const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const user = earnMoneyUsers[uid];
     if (!user) {
@@ -2706,11 +2873,17 @@ async function startServer() {
     const isBlocked = typeof req.body?.isBlocked === 'boolean' ? req.body.isBlocked : !user.isBlocked;
     user.isBlocked = isBlocked;
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
-    res.json({ user: syncUserWithConfig(user) });
+    await upsertUserToSupabase(user);
+    res.json({ user: syncUserWithConfig(user), dbStatus });
   });
 
-  app.post('/api/admin/earnmoney/withdrawals/:uid/:wdId/decide', requireAdmin, (req, res) => {
+  app.post('/api/admin/earnmoney/withdrawals/:uid/:wdId/decide', requireAdmin, async (req, res) => {
+    const dbStatus = await refreshEarnMoneyStoreFromDatabase();
+    if (!dbStatus.connected) {
+      res.status(503).json({ error: 'Connect Database to Save Permanently', dbStatus });
+      return;
+    }
+
     const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const wdId = String(req.params.wdId || '');
     const decision = req.body?.decision;
@@ -2748,11 +2921,13 @@ async function startServer() {
     }
 
     earnMoneyUsers[uid] = user;
-    saveEarnMoneyUsers(earnMoneyUsers);
+    await updateWithdrawStatusInSupabase(wdId, wd.status);
+    await upsertUserToSupabase(user);
     res.json({
       withdrawal: wd,
       user: syncUserWithConfig(user),
-      overview: buildEarnMoneyAdminOverview(),
+      overview: { ...buildEarnMoneyAdminOverview(), dbStatus },
+      dbStatus,
     });
   });
 
@@ -2835,9 +3010,13 @@ async function startServer() {
     void poll();
   }
 
+  await refreshEarnMoneyStoreFromDatabase().catch(() => undefined);
+
   const PORT = Number(process.env.PORT) || 3000;
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Earn Money Mini App (@${TELEGRAM_BOT_USERNAME}) listening on http://0.0.0.0:${PORT}`);
+    console.log(
+      `Earn Money Mini App (@${TELEGRAM_BOT_USERNAME}) listening on http://0.0.0.0:${PORT} [DB: ${latestDbStatus.connected ? 'Connected (Supabase)' : 'Not Connected'}]`
+    );
     void startTelegramPollingIfConfigured();
   });
 }

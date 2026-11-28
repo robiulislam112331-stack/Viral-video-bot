@@ -137,3 +137,12 @@ export interface EarnMoneyState {
   referralsList: ReferralItem[];
   withdrawHistory: WithdrawalItem[];
 }
+
+export interface DatabaseConnectionStatus {
+  connected: boolean;
+  provider: 'Supabase';
+  configured: boolean;
+  missingTables?: string[];
+  error?: string;
+}
+

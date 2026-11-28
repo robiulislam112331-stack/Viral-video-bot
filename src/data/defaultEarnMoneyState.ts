@@ -1,7 +1,5 @@
 import type { BonusTaskItem, EarnMoneyConfig, EarnMoneyState, TaskType } from '../types/earnMoney';
 
-export const EARNMONEY_LIVE_CONFIG_KEY = 'earnmoney_live_config_v1';
-
 export const TASK_TYPES: TaskType[] = ['Permanent', 'Daily', '1 Week', '1 Time Remove'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
