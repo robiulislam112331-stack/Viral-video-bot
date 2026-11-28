@@ -28,7 +28,7 @@ interface ModalsProps {
   state: EarnMoneyState;
   config: EarnMoneyConfig;
   onClose: () => void;
-  onClaimAdSlot: () => void;
+  onClaimAdSlot: (mode?: 'view' | 'click') => void;
   onAddTask: (task: Omit<BonusTaskItem, 'id' | 'completed'>) => void;
   onNavigateTab: (tab: EarnMoneyTab, scrollToHistory?: boolean) => void;
   onOpenModal: (modal: ModalType) => void;
@@ -47,6 +47,9 @@ export const Modals: React.FC<ModalsProps> = ({
   onNotify,
 }) => {
   const supportUrl = buildSupportTelegramUrl(config.supportUsername);
+  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
+  const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
   const [adSecondsLeft, setAdSecondsLeft] = useState(5);
   const [adStarted, setAdStarted] = useState(false);
 
@@ -125,7 +128,7 @@ export const Modals: React.FC<ModalsProps> = ({
     onNotify('Support ticket received. Team replies within 2 hours.');
   };
 
-  const slots = Array.from({ length: state.dailyAdsTotal }, (_, idx) => idx + 1);
+  const slots = Array.from({ length: dailyTotal }, (_, idx) => idx + 1);
 
   return (
     <div
@@ -152,68 +155,99 @@ export const Modals: React.FC<ModalsProps> = ({
               </span>
               <div>
                 <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                  Premium Ad Slot #{state.nextSlotNumber}
+                  Premium Ad Slot #{Math.min(dailyTotal, state.dailyAdsCompleted + 1)}
                 </h3>
                 <p className="text-xs font-medium text-slate-500">
-                  Reward: +0.0010 USDT BEP20
+                  View: +{config.perAdViewReward.toFixed(4)} USDT &middot; Click: +
+                  {config.perAdClickReward.toFixed(4)} USDT
                 </p>
               </div>
             </div>
 
-            <div className="rounded-2xl bg-[#F6F8FA] p-5 text-center">
-              {adSecondsLeft > 0 ? (
-                <>
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Verifying Sponsored Ad
-                  </p>
-                  <p className="mt-2 font-display text-4xl font-extrabold text-[#00944A] tabular-nums">
-                    {adSecondsLeft}s
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Keep this window open until verification finishes.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="mx-auto h-10 w-10 text-[#00944A]" />
-                  <p className="mt-2 font-display text-base font-extrabold text-[#111827]">
-                    Ad Verification Complete!
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Tap below to credit +0.0010 USDT to your balance.
-                  </p>
-                </>
-              )}
-            </div>
+            {adsSlotEmpty ? (
+              <div className="rounded-2xl bg-red-50 p-5 text-center">
+                <p className="font-display text-base font-extrabold text-red-700">
+                  Premium Ads Slot Empty
+                </p>
+                <p className="mt-1 text-xs text-red-600">
+                  Ads budget is currently empty. Please check back later.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-2xl bg-[#F6F8FA] p-5 text-center">
+                  {adSecondsLeft > 0 ? (
+                    <>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Verifying Sponsored Ad
+                      </p>
+                      <p className="mt-2 font-display text-4xl font-extrabold text-[#00944A] tabular-nums">
+                        {adSecondsLeft}s
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Keep this window open until verification finishes.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="mx-auto h-10 w-10 text-[#00944A]" />
+                      <p className="mt-2 font-display text-base font-extrabold text-[#111827]">
+                        Ad Verification Complete!
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Claim view reward (+{config.perAdViewReward.toFixed(4)} USDT) or ad click bonus (+
+                        {config.perAdClickReward.toFixed(4)} USDT).
+                      </p>
+                    </>
+                  )}
+                </div>
 
-            <button
-              type="button"
-              disabled={adSecondsLeft > 0}
-              onClick={() => {
-                onClaimAdSlot();
-                onClose();
-              }}
-              className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold"
-            >
-              <span>
-                {adSecondsLeft > 0
-                  ? `Please Wait (${adSecondsLeft}s)`
-                  : 'Claim +0.0010 USDT'}
-              </span>
-            </button>
+                <div className="space-y-2.5">
+                  <button
+                    type="button"
+                    disabled={adSecondsLeft > 0}
+                    onClick={() => {
+                      onClaimAdSlot('view');
+                      onClose();
+                    }}
+                    className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold"
+                  >
+                    <span>
+                      {adSecondsLeft > 0
+                        ? `Please Wait (${adSecondsLeft}s)`
+                        : `Claim +${config.perAdViewReward.toFixed(4)} USDT`}
+                    </span>
+                  </button>
+
+                  {adSecondsLeft <= 0 && config.perAdClickReward > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClaimAdSlot('click');
+                        onClose();
+                      }}
+                      className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
+                    >
+                      <span>Ad Click Bonus (+{config.perAdClickReward.toFixed(4)} USDT)</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {/* 2. 100 SLOTS MODAL */}
+        {/* 2. DAILY SLOTS MODAL */}
         {activeModal === 'slots_list' && (
           <div className="space-y-4 pt-1">
             <div className="pr-10">
               <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                100 Daily Ad Slots
+                {dailyTotal} Daily Ad Slots
               </h3>
               <p className="text-xs font-medium text-slate-500">
-                Completed {state.dailyAdsCompleted}/{state.dailyAdsTotal} &middot; Ceiling $
-                {state.dailyCeilingUsdt.toFixed(4)} USDT
+                Completed {state.dailyAdsCompleted}/{dailyTotal} &middot; Ceiling $
+                {dailyCeiling.toFixed(4)} USDT &middot; Slot Price $
+                {config.adsSlotPriceForAdvertiser.toFixed(2)} USDT
               </p>
             </div>
 
@@ -349,17 +383,17 @@ export const Modals: React.FC<ModalsProps> = ({
                 {
                   step: '01',
                   title: 'Watch Daily Ad Slots',
-                  desc: 'Complete up to 100 sponsored video ad slots daily to earn +0.0010 USDT per slot.',
+                  desc: `Complete up to ${dailyTotal} sponsored video ad slots daily to earn +${config.perAdViewReward.toFixed(4)} USDT per view.`,
                 },
                 {
                   step: '02',
                   title: 'Finish Bonus Tasks',
-                  desc: 'Open the Task Center and verify daily partner tasks for +0.20 USDT rewards.',
+                  desc: 'Open the Task Center and verify daily partner tasks for USDT rewards.',
                 },
                 {
                   step: '03',
                   title: 'Invite Friends via Refer',
-                  desc: 'Share your personal referral link to earn +0.02 USDT per active friend and milestone bonuses.',
+                  desc: `Share your personal referral link to earn +${config.referBonusAmount.toFixed(2)} USDT referral bonus rewards.`,
                 },
                 {
                   step: '04',

@@ -4,9 +4,24 @@
   "welcomeSubtitle": "Join our 2 official channels to stay updated.",
   "channel1Url": "https://t.me/waincomesite",
   "channel2Url": "https://t.me/premiumapps5462",
-  "referBonusAmount": 0.1,
   "minWithdrawAmount": 0.8,
   "supportUsername": "@waincomesite",
+  "referBonusAmount": 0.1,
+  "referMinAdsWatched": 0,
+  "referMinChannelsJoined": 0,
+  "referMinTasksCompleted": 0,
+  "referBonusType": "after_activation",
+  "maxReferPerUser": 0,
+  "referLinkFormat": "https://t.me/moneyxearnbot?start=ref_[USER_ID]",
+  "premiumAdsEnabled": true,
+  "premiumAdsBudget": 100,
+  "perAdViewReward": 0.01,
+  "perAdClickReward": 0.02,
+  "dailyAdsLimitPerUser": 20,
+  "adsSlotPriceForAdvertiser": 5,
+  "maintenanceMode": false,
+  "maintenanceMessage": "Bot is under maintenance. New features coming soon. Please try again later.",
+  "maintenanceAdminId": "",
   "tasks": [
     {
       "id": "task_verify_app",
@@ -19,5 +34,5 @@
       "createdBy": "admin"
     }
   ],
-  "updatedAt": "2026-11-28T07:48:42.144Z"
+  "updatedAt": "2026-11-28T08:09:30.244Z"
 }

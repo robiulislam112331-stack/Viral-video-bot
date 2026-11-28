@@ -24,10 +24,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigateTab,
   onOpenModal,
 }) => {
-  const progressPct = Math.min(
-    100,
-    Math.round((state.dailyAdsCompleted / state.dailyAdsTotal) * 100)
-  );
+  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
+  const progressPct = Math.min(100, Math.round((state.dailyAdsCompleted / dailyTotal) * 100));
+  const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
 
   const listItems: {
     id: string;
@@ -127,18 +127,26 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <h2 className="font-display text-base font-extrabold text-[#111827]">
                     Premium Ads
                   </h2>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-extrabold text-orange-600">
-                    <Flame className="h-3 w-3" />
-                    HOT
-                  </span>
+                  {adsSlotEmpty ? (
+                    <span className="inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-extrabold text-red-600">
+                      EMPTY
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-extrabold text-orange-600">
+                      <Flame className="h-3 w-3" />
+                      HOT
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs font-medium text-slate-500">
-                  Watch sponsored video ads &amp; earn USDT
+                  {adsSlotEmpty
+                    ? 'Premium Ads Slot Empty'
+                    : 'Watch sponsored video ads & earn USDT'}
                 </p>
               </div>
             </div>
             <span className="font-mono text-sm font-bold text-[#00944A] tabular-nums whitespace-nowrap">
-              +0.0010 USDT
+              +{config.perAdViewReward.toFixed(4)} USDT
             </span>
           </div>
 
@@ -147,11 +155,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <span className="text-slate-600">
                 Daily Ad Slots:{' '}
                 <strong className="text-[#111827] tabular-nums">
-                  {state.dailyAdsCompleted}/{state.dailyAdsTotal} Completed
+                  {state.dailyAdsCompleted}/{dailyTotal} Completed
                 </strong>
               </span>
               <span className="font-bold text-[#00944A] tabular-nums">
-                Next: Slot #{state.nextSlotNumber}
+                Next: Slot #{Math.min(dailyTotal, state.dailyAdsCompleted + 1)}
               </span>
             </div>
 
@@ -163,7 +171,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
-              <span>Daily Earning Ceiling: ${state.dailyCeilingUsdt.toFixed(4)} USDT</span>
+              <span>Daily Earning Ceiling: ${dailyCeiling.toFixed(4)} USDT</span>
               <span className="tabular-nums">{progressPct}%</span>
             </div>
           </div>
@@ -171,17 +179,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="mt-4 grid grid-cols-3 gap-2.5">
             <button
               type="button"
+              disabled={adsSlotEmpty}
               onClick={() => onOpenModal('ad_watch')}
-              className="mf-btn-green-3d col-span-2 flex min-h-[46px] items-center justify-center px-4 py-2.5 text-sm font-extrabold"
+              className="mf-btn-green-3d col-span-2 flex min-h-[46px] items-center justify-center px-4 py-2.5 text-sm font-extrabold disabled:opacity-50"
             >
-              Verify to Start
+              {adsSlotEmpty ? 'Premium Ads Slot Empty' : 'Verify to Start'}
             </button>
             <button
               type="button"
               onClick={() => onOpenModal('slots_list')}
               className="mf-btn-outline-3d col-span-1 flex min-h-[46px] items-center justify-center px-3 py-2.5 text-xs font-extrabold whitespace-nowrap"
             >
-              100 Slots
+              {dailyTotal} Slots
             </button>
           </div>
         </section>

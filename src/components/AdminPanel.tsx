@@ -11,6 +11,7 @@ import {
   Loader2,
   Lock,
   LogOut,
+  PlayCircle,
   Plus,
   Power,
   RefreshCw,
@@ -21,6 +22,7 @@ import {
   UserCheck,
   Users,
   Wallet,
+  Wrench,
   X,
   XCircle,
 } from 'lucide-react';
@@ -34,6 +36,7 @@ import type {
   BonusTaskItem,
   EarnMoneyConfig,
   EarnMoneyState,
+  ReferBonusType,
 } from '../types/earnMoney';
 
 type AdminTab = 'dashboard' | 'settings' | 'tasks' | 'users' | 'withdrawals';
@@ -89,21 +92,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRecord[]>([]);
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Settings Form (All Editable + Saveable)
+  // Maintenance Mode State (Top of Admin Panel)
+  const [maintenanceMode, setMaintenanceMode] = useState(DEFAULT_EARNMONEY_CONFIG.maintenanceMode);
+  const [maintenanceMessage, setMaintenanceMessage] = useState(
+    DEFAULT_EARNMONEY_CONFIG.maintenanceMessage
+  );
+  const [maintenanceAdminId, setMaintenanceAdminId] = useState(
+    DEFAULT_EARNMONEY_CONFIG.maintenanceAdminId
+  );
+  const [maintenanceSavedMsg, setMaintenanceSavedMsg] = useState<string | null>(null);
+
+  // General Bot Settings
   const [botName, setBotName] = useState(DEFAULT_EARNMONEY_CONFIG.botName);
   const [welcomeTitle, setWelcomeTitle] = useState(DEFAULT_EARNMONEY_CONFIG.welcomeTitle);
   const [welcomeSubtitle, setWelcomeSubtitle] = useState(DEFAULT_EARNMONEY_CONFIG.welcomeSubtitle);
   const [channel1Url, setChannel1Url] = useState(DEFAULT_EARNMONEY_CONFIG.channel1Url);
   const [channel2Url, setChannel2Url] = useState(DEFAULT_EARNMONEY_CONFIG.channel2Url);
-  const [referBonusAmount, setReferBonusAmount] = useState(
-    String(DEFAULT_EARNMONEY_CONFIG.referBonusAmount)
-  );
   const [minWithdrawAmount, setMinWithdrawAmount] = useState(
     String(DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount)
   );
   const [supportUsername, setSupportUsername] = useState(DEFAULT_EARNMONEY_CONFIG.supportUsername);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [settingsSavedMsg, setSettingsSavedMsg] = useState<string | null>(null);
+  const [generalSavedMsg, setGeneralSavedMsg] = useState<string | null>(null);
+
+  // 1. Refer System Settings
+  const [referBonusAmount, setReferBonusAmount] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.referBonusAmount)
+  );
+  const [referMinAdsWatched, setReferMinAdsWatched] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.referMinAdsWatched)
+  );
+  const [referMinChannelsJoined, setReferMinChannelsJoined] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.referMinChannelsJoined)
+  );
+  const [referMinTasksCompleted, setReferMinTasksCompleted] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.referMinTasksCompleted)
+  );
+  const [referBonusType, setReferBonusType] = useState<ReferBonusType>(
+    DEFAULT_EARNMONEY_CONFIG.referBonusType
+  );
+  const [maxReferPerUser, setMaxReferPerUser] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.maxReferPerUser)
+  );
+  const [referLinkFormat, setReferLinkFormat] = useState(DEFAULT_EARNMONEY_CONFIG.referLinkFormat);
+  const [referSavedMsg, setReferSavedMsg] = useState<string | null>(null);
+
+  // 2. Premium Ads Slot Settings
+  const [premiumAdsEnabled, setPremiumAdsEnabled] = useState(
+    DEFAULT_EARNMONEY_CONFIG.premiumAdsEnabled
+  );
+  const [premiumAdsBudget, setPremiumAdsBudget] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.premiumAdsBudget)
+  );
+  const [perAdViewReward, setPerAdViewReward] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.perAdViewReward)
+  );
+  const [perAdClickReward, setPerAdClickReward] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.perAdClickReward)
+  );
+  const [dailyAdsLimitPerUser, setDailyAdsLimitPerUser] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser)
+  );
+  const [adsSlotPriceForAdvertiser, setAdsSlotPriceForAdvertiser] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.adsSlotPriceForAdvertiser)
+  );
+  const [adsSavedMsg, setAdsSavedMsg] = useState<string | null>(null);
+
+  const [savingSection, setSavingSection] = useState<string | null>(null);
 
   // Task Management State
   const [tasks, setTasks] = useState<BonusTaskItem[]>(DEFAULT_EARNMONEY_CONFIG.tasks);
@@ -137,9 +191,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     setWelcomeSubtitle(cfg.welcomeSubtitle);
     setChannel1Url(cfg.channel1Url);
     setChannel2Url(cfg.channel2Url);
-    setReferBonusAmount(String(cfg.referBonusAmount));
     setMinWithdrawAmount(String(cfg.minWithdrawAmount));
     setSupportUsername(cfg.supportUsername);
+
+    setReferBonusAmount(String(cfg.referBonusAmount));
+    setReferMinAdsWatched(String(cfg.referMinAdsWatched ?? 0));
+    setReferMinChannelsJoined(String(cfg.referMinChannelsJoined ?? 0));
+    setReferMinTasksCompleted(String(cfg.referMinTasksCompleted ?? 0));
+    setReferBonusType(cfg.referBonusType || 'after_activation');
+    setMaxReferPerUser(String(cfg.maxReferPerUser ?? 0));
+    setReferLinkFormat(cfg.referLinkFormat || DEFAULT_EARNMONEY_CONFIG.referLinkFormat);
+
+    setPremiumAdsEnabled(cfg.premiumAdsEnabled !== false);
+    setPremiumAdsBudget(String(cfg.premiumAdsBudget ?? 100));
+    setPerAdViewReward(String(cfg.perAdViewReward ?? 0.01));
+    setPerAdClickReward(String(cfg.perAdClickReward ?? 0.02));
+    setDailyAdsLimitPerUser(String(cfg.dailyAdsLimitPerUser ?? 20));
+    setAdsSlotPriceForAdvertiser(String(cfg.adsSlotPriceForAdvertiser ?? 5));
+
+    setMaintenanceMode(Boolean(cfg.maintenanceMode));
+    setMaintenanceMessage(cfg.maintenanceMessage || DEFAULT_EARNMONEY_CONFIG.maintenanceMessage);
+    setMaintenanceAdminId(cfg.maintenanceAdminId || '');
+
     setTasks(Array.isArray(cfg.tasks) ? cfg.tasks : []);
     broadcastLiveConfig(cfg);
   }, []);
@@ -222,12 +295,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     }
   };
 
-  // --- Save Bot Settings ---
-  const handleSaveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // --- Shared Settings Persistence ---
+  const saveConfigPayload = async (
+    sectionKey: 'maintenance' | 'general' | 'refer' | 'ads',
+    payload: Partial<EarnMoneyConfig>
+  ) => {
     if (!adminToken) return;
-    setSavingSettings(true);
-    setSettingsSavedMsg(null);
+    setSavingSection(sectionKey);
+    if (sectionKey === 'maintenance') setMaintenanceSavedMsg(null);
+    if (sectionKey === 'general') setGeneralSavedMsg(null);
+    if (sectionKey === 'refer') setReferSavedMsg(null);
+    if (sectionKey === 'ads') setAdsSavedMsg(null);
+
     try {
       const res = await fetch('/api/admin/earnmoney/settings', {
         method: 'PUT',
@@ -235,16 +314,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           'Content-Type': 'application/json',
           Authorization: `Bearer ${adminToken}`,
         },
-        body: JSON.stringify({
-          botName: botName.trim(),
-          welcomeTitle: welcomeTitle.trim(),
-          welcomeSubtitle: welcomeSubtitle.trim(),
-          channel1Url: channel1Url.trim(),
-          channel2Url: channel2Url.trim(),
-          referBonusAmount: Number.parseFloat(referBonusAmount),
-          minWithdrawAmount: Number.parseFloat(minWithdrawAmount),
-          supportUsername: supportUsername.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json()) as { config?: EarnMoneyConfig; error?: string };
       if (!res.ok || !data.config) {
@@ -252,13 +322,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
       applyConfigToForm(data.config);
-      setSettingsSavedMsg('Saved Successfully');
+      if (sectionKey === 'maintenance') setMaintenanceSavedMsg('Saved Successfully');
+      if (sectionKey === 'general') setGeneralSavedMsg('Saved Successfully');
+      if (sectionKey === 'refer') setReferSavedMsg('Saved Successfully');
+      if (sectionKey === 'ads') setAdsSavedMsg('Saved Successfully');
       showToast('ok', 'Saved Successfully');
     } catch {
       showToast('err', 'Network error while saving settings.');
     } finally {
-      setSavingSettings(false);
+      setSavingSection(null);
     }
+  };
+
+  const handleSaveMaintenance = (e: React.FormEvent) => {
+    e.preventDefault();
+    void saveConfigPayload('maintenance', {
+      maintenanceMode,
+      maintenanceMessage: maintenanceMessage.trim(),
+      maintenanceAdminId: maintenanceAdminId.trim(),
+    });
+  };
+
+  const handleSaveGeneral = (e: React.FormEvent) => {
+    e.preventDefault();
+    void saveConfigPayload('general', {
+      botName: botName.trim(),
+      welcomeTitle: welcomeTitle.trim(),
+      welcomeSubtitle: welcomeSubtitle.trim(),
+      channel1Url: channel1Url.trim(),
+      channel2Url: channel2Url.trim(),
+      minWithdrawAmount: Number.parseFloat(minWithdrawAmount),
+      supportUsername: supportUsername.trim(),
+    });
+  };
+
+  const handleSaveRefer = (e: React.FormEvent) => {
+    e.preventDefault();
+    void saveConfigPayload('refer', {
+      referBonusAmount: Number.parseFloat(referBonusAmount),
+      referMinAdsWatched: Number.parseInt(referMinAdsWatched || '0', 10),
+      referMinChannelsJoined: Number.parseInt(referMinChannelsJoined || '0', 10),
+      referMinTasksCompleted: Number.parseInt(referMinTasksCompleted || '0', 10),
+      referBonusType,
+      maxReferPerUser: Number.parseInt(maxReferPerUser || '0', 10),
+      referLinkFormat: referLinkFormat.trim(),
+    });
+  };
+
+  const handleSaveAds = (e: React.FormEvent) => {
+    e.preventDefault();
+    void saveConfigPayload('ads', {
+      premiumAdsEnabled,
+      premiumAdsBudget: Number.parseFloat(premiumAdsBudget),
+      perAdViewReward: Number.parseFloat(perAdViewReward),
+      perAdClickReward: Number.parseFloat(perAdClickReward),
+      dailyAdsLimitPerUser: Number.parseInt(dailyAdsLimitPerUser || '20', 10),
+      adsSlotPriceForAdvertiser: Number.parseFloat(adsSlotPriceForAdvertiser),
+    });
   };
 
   // --- Task Management Handlers ---
@@ -434,10 +554,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
       setUsers((prev) => prev.map((u) => (u.userId === user.userId ? data.user! : u)));
-      showToast(
-        'ok',
-        `User ${user.userId} ${nextBlocked ? 'blocked' : 'unblocked'}.`
-      );
+      showToast('ok', `User ${user.userId} ${nextBlocked ? 'blocked' : 'unblocked'}.`);
       void fetchOverview();
     } catch {
       showToast('err', 'Network error toggling block status.');
@@ -562,6 +679,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     );
   }
 
+  const adsBudgetEmpty = !premiumAdsEnabled || Number.parseFloat(premiumAdsBudget || '0') <= 0;
+
   return (
     <div className="min-h-screen bg-[#070B09] text-zinc-100 pb-20">
       {/* Header */}
@@ -659,6 +778,119 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       )}
 
       <main className="mx-auto max-w-6xl px-4 pt-6 space-y-6">
+        {/* TOP SECTION: MAINTENANCE MODE (Always at Top of Admin Panel) */}
+        <section
+          className={`rounded-2xl border p-5 transition-colors ${
+            maintenanceMode
+              ? 'border-amber-500/50 bg-amber-950/15'
+              : 'border-zinc-800/90 bg-[#0E1512]'
+          }`}
+        >
+          <form onSubmit={handleSaveMaintenance} className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    maintenanceMode
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-zinc-900 text-emerald-400 border border-zinc-800'
+                  }`}
+                >
+                  <Wrench className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="font-display text-base font-bold text-white">Maintenance Mode</h2>
+                  <p className="text-xs text-zinc-400">
+                    When ON, only the configured Admin ID can enter the bot; all other users see Maintenance Message.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {maintenanceSavedMsg && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {maintenanceSavedMsg}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceMode((prev) => !prev);
+                    setMaintenanceSavedMsg(null);
+                  }}
+                  className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border transition-all ${
+                    maintenanceMode
+                      ? 'bg-amber-500 text-black border-amber-400'
+                      : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:border-emerald-500/40'
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Maintenance Mode: {maintenanceMode ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2">
+                <label
+                  htmlFor="admin-maintenance-msg"
+                  className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                >
+                  Maintenance Message
+                </label>
+                <input
+                  id="admin-maintenance-msg"
+                  type="text"
+                  required
+                  value={maintenanceMessage}
+                  onChange={(e) => {
+                    setMaintenanceMessage(e.target.value);
+                    setMaintenanceSavedMsg(null);
+                  }}
+                  placeholder="Bot is under maintenance. New features coming soon. Please try again later."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="admin-maintenance-id"
+                  className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                >
+                  Admin User ID (Bypass)
+                </label>
+                <input
+                  id="admin-maintenance-id"
+                  type="text"
+                  value={maintenanceAdminId}
+                  onChange={(e) => {
+                    setMaintenanceAdminId(e.target.value);
+                    setMaintenanceSavedMsg(null);
+                  }}
+                  placeholder="e.g. 74920184"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={savingSection === 'maintenance'}
+                className="px-5 py-2.5 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-xs text-white flex items-center gap-2"
+              >
+                {savingSection === 'maintenance' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Save Maintenance Settings</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
         {/* 1. DASHBOARD TAB */}
         {activeTab === 'dashboard' && (
           <section className="space-y-5">
@@ -674,11 +906,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
               </div>
 
               <div className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5">
-                <p className="text-xs font-semibold text-zinc-400">Bonus Tasks</p>
+                <p className="text-xs font-semibold text-zinc-400">Ads Slot Budget</p>
                 <p className="mt-2 font-display text-3xl font-extrabold text-white tabular-nums">
-                  {stats.activeTasks}/{stats.totalTasks}
+                  {Number(premiumAdsBudget || 0).toFixed(2)}
                 </p>
-                <p className="mt-1 text-[11px] text-zinc-500">Active Tasks Live</p>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  {adsBudgetEmpty ? 'Premium Ads Slot Empty' : 'USDT Remaining'}
+                </p>
               </div>
 
               <div className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5">
@@ -718,18 +952,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   <div className="flex justify-between py-1.5 border-b border-zinc-800/70">
                     <span className="text-zinc-400">Refer Bonus</span>
                     <span className="font-mono font-bold text-emerald-400">
-                      +{Number(referBonusAmount || 0).toFixed(2)} USDT
+                      +{Number(referBonusAmount || 0).toFixed(2)} USDT ({referBonusType})
                     </span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-zinc-800/70">
+                    <span className="text-zinc-400">Per Ad View / Click</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      ${Number(perAdViewReward || 0).toFixed(4)} / $
+                      {Number(perAdClickReward || 0).toFixed(4)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
                     <span className="text-zinc-400">Min Withdraw</span>
                     <span className="font-mono font-bold text-emerald-400">
                       {Number(minWithdrawAmount || 0).toFixed(2)} USDT
                     </span>
-                  </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-zinc-400">Support</span>
-                    <span className="font-mono font-bold text-white">{supportUsername}</span>
                   </div>
                 </div>
               </div>
@@ -743,8 +980,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                     className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-left"
                   >
                     <Settings className="w-4 h-4 text-emerald-400 mb-1.5" />
-                    <p className="text-xs font-bold text-white">Bot Settings</p>
-                    <p className="text-[11px] text-zinc-500">Titles, Links &amp; Limits</p>
+                    <p className="text-xs font-bold text-white">All Settings</p>
+                    <p className="text-[11px] text-zinc-500">Refer, Ads &amp; General</p>
                   </button>
                   <button
                     type="button"
@@ -779,227 +1016,588 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           </section>
         )}
 
-        {/* 2. SETTINGS TAB (ALL 8 EDITABLE FIELDS + SAVE BUTTON) */}
+        {/* 2. SETTINGS TAB */}
         {activeTab === 'settings' && (
-          <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-              <div>
-                <h2 className="font-display text-lg font-bold text-white">
-                  Bot &amp; Mini App Settings
-                </h2>
-                <p className="text-xs text-zinc-400">
-                  Every value edited and saved here updates the User Mini App &amp; Telegram Bot immediately.
-                </p>
-              </div>
-              {settingsSavedMsg && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{settingsSavedMsg}</span>
+          <div className="space-y-6">
+            {/* A. REFER SYSTEM SETTINGS */}
+            <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-lg font-bold text-white">
+                      Refer System Settings
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      Configure referral bonus, activation rules (0 = no need), bonus type, limits &amp; link format.
+                    </p>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            <form onSubmit={(e) => void handleSaveSettings(e)} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="admin-bot-name"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Bot Name
-                  </label>
-                  <input
-                    id="admin-bot-name"
-                    type="text"
-                    required
-                    value={botName}
-                    onChange={(e) => {
-                      setBotName(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="Earn Money"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-support-username"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Support Username
-                  </label>
-                  <input
-                    id="admin-support-username"
-                    type="text"
-                    required
-                    value={supportUsername}
-                    onChange={(e) => {
-                      setSupportUsername(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="@waincomesite"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-welcome-title"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Welcome Title
-                  </label>
-                  <input
-                    id="admin-welcome-title"
-                    type="text"
-                    required
-                    value={welcomeTitle}
-                    onChange={(e) => {
-                      setWelcomeTitle(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="Welcome to Earn Money"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-welcome-subtitle"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Welcome Subtitle
-                  </label>
-                  <input
-                    id="admin-welcome-subtitle"
-                    type="text"
-                    required
-                    value={welcomeSubtitle}
-                    onChange={(e) => {
-                      setWelcomeSubtitle(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="Join our 2 official channels to stay updated."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-channel1-url"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Channel 1 Link
-                  </label>
-                  <input
-                    id="admin-channel1-url"
-                    type="url"
-                    required
-                    value={channel1Url}
-                    onChange={(e) => {
-                      setChannel1Url(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="https://t.me/waincomesite"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-channel2-url"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Channel 2 Link
-                  </label>
-                  <input
-                    id="admin-channel2-url"
-                    type="url"
-                    required
-                    value={channel2Url}
-                    onChange={(e) => {
-                      setChannel2Url(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    placeholder="https://t.me/premiumapps5462"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-refer-bonus"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Refer Bonus Amount (USDT)
-                  </label>
-                  <input
-                    id="admin-refer-bonus"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={referBonusAmount}
-                    onChange={(e) => {
-                      setReferBonusAmount(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="admin-min-withdraw"
-                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
-                  >
-                    Min Withdraw Amount (USDT)
-                  </label>
-                  <input
-                    id="admin-min-withdraw"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    value={minWithdrawAmount}
-                    onChange={(e) => {
-                      setMinWithdrawAmount(e.target.value);
-                      setSettingsSavedMsg(null);
-                    }}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex flex-wrap items-center gap-3">
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2 transition-all"
-                >
-                  {savingSettings ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  <span>Save Settings</span>
-                </button>
-
-                {settingsSavedMsg && (
-                  <span className="text-sm font-bold text-emerald-400">
-                    {settingsSavedMsg}
+                {referSavedMsg && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {referSavedMsg}
                   </span>
                 )}
               </div>
-            </form>
-          </section>
+
+              <form onSubmit={handleSaveRefer} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label
+                      htmlFor="admin-refer-bonus"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Refer Bonus Amount (USDT)
+                    </label>
+                    <input
+                      id="admin-refer-bonus"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={referBonusAmount}
+                      onChange={(e) => {
+                        setReferBonusAmount(e.target.value);
+                        setReferSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-refer-type"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Refer Bonus Type
+                    </label>
+                    <select
+                      id="admin-refer-type"
+                      value={referBonusType}
+                      onChange={(e) => {
+                        setReferBonusType(e.target.value as ReferBonusType);
+                        setReferSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
+                    >
+                      <option value="instant">Instant</option>
+                      <option value="after_activation">After Activation Rule Complete</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-max-refer"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Max Refer Per User (0 = Unlimited)
+                    </label>
+                    <input
+                      id="admin-max-refer"
+                      type="number"
+                      min="0"
+                      step="1"
+                      required
+                      value={maxReferPerUser}
+                      onChange={(e) => {
+                        setMaxReferPerUser(e.target.value);
+                        setReferSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Refer Activation Rule Group */}
+                <div className="rounded-xl border border-zinc-800 bg-[#070B09]/70 p-4 space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                    Refer Activation Rule (0 = No Need)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label
+                        htmlFor="admin-min-ads-watched"
+                        className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                      >
+                        Min Ads Watched
+                      </label>
+                      <input
+                        id="admin-min-ads-watched"
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={referMinAdsWatched}
+                        onChange={(e) => {
+                          setReferMinAdsWatched(e.target.value);
+                          setReferSavedMsg(null);
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#0E1512] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="admin-min-channels-joined"
+                        className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                      >
+                        Min Channels Joined
+                      </label>
+                      <input
+                        id="admin-min-channels-joined"
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={referMinChannelsJoined}
+                        onChange={(e) => {
+                          setReferMinChannelsJoined(e.target.value);
+                          setReferSavedMsg(null);
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#0E1512] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="admin-min-tasks-completed"
+                        className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                      >
+                        Min Tasks Completed
+                      </label>
+                      <input
+                        id="admin-min-tasks-completed"
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={referMinTasksCompleted}
+                        onChange={(e) => {
+                          setReferMinTasksCompleted(e.target.value);
+                          setReferSavedMsg(null);
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#0E1512] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-refer-link-format"
+                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                  >
+                    Refer Link Format
+                  </label>
+                  <input
+                    id="admin-refer-link-format"
+                    type="text"
+                    required
+                    value={referLinkFormat}
+                    onChange={(e) => {
+                      setReferLinkFormat(e.target.value);
+                      setReferSavedMsg(null);
+                    }}
+                    placeholder="https://t.me/moneyxearnbot?start=ref_[USER_ID]"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingSection === 'refer'}
+                    className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    {savingSection === 'refer' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>Save Refer Settings</span>
+                  </button>
+                  {referSavedMsg && (
+                    <span className="text-sm font-bold text-emerald-400">{referSavedMsg}</span>
+                  )}
+                </div>
+              </form>
+            </section>
+
+            {/* B. PREMIUM ADS SLOT SETTINGS */}
+            <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <PlayCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="font-display text-lg font-bold text-white">
+                        Premium Ads Slot
+                      </h2>
+                      {adsBudgetEmpty && (
+                        <span className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 text-[10px] font-bold">
+                          SLOT EMPTY
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-400">
+                      Control Ads ON/OFF, total ads budget, view/click rewards, daily limits, and advertiser slot price.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  {adsSavedMsg && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
+                      <CheckCircle2 className="w-4 h-4" />
+                      {adsSavedMsg}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPremiumAdsEnabled((prev) => !prev);
+                      setAdsSavedMsg(null);
+                    }}
+                    className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 border transition-all ${
+                      premiumAdsEnabled
+                        ? 'bg-[#00944A] text-white border-emerald-400'
+                        : 'bg-zinc-900 text-zinc-400 border-zinc-700'
+                    }`}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                    <span>Premium Ads Slot: {premiumAdsEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveAds} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label
+                      htmlFor="admin-ads-budget"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Total Ads Budget / Balance (USDT)
+                    </label>
+                    <input
+                      id="admin-ads-budget"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={premiumAdsBudget}
+                      onChange={(e) => {
+                        setPremiumAdsBudget(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-per-ad-view"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Per Ad View Reward (USDT)
+                    </label>
+                    <input
+                      id="admin-per-ad-view"
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={perAdViewReward}
+                      onChange={(e) => {
+                        setPerAdViewReward(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-per-ad-click"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Per Ad Click Reward (USDT)
+                    </label>
+                    <input
+                      id="admin-per-ad-click"
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={perAdClickReward}
+                      onChange={(e) => {
+                        setPerAdClickReward(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-daily-ads-limit"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Daily Ads Limit Per User
+                    </label>
+                    <input
+                      id="admin-daily-ads-limit"
+                      type="number"
+                      step="1"
+                      min="1"
+                      required
+                      value={dailyAdsLimitPerUser}
+                      onChange={(e) => {
+                        setDailyAdsLimitPerUser(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-slot-price"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Ads Slot Price for Advertiser (USDT)
+                    </label>
+                    <input
+                      id="admin-slot-price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={adsSlotPriceForAdvertiser}
+                      onChange={(e) => {
+                        setAdsSlotPriceForAdvertiser(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingSection === 'ads'}
+                    className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    {savingSection === 'ads' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>Save Premium Ads Settings</span>
+                  </button>
+                  {adsSavedMsg && (
+                    <span className="text-sm font-bold text-emerald-400">{adsSavedMsg}</span>
+                  )}
+                </div>
+              </form>
+            </section>
+
+            {/* C. GENERAL BOT & MINI APP SETTINGS */}
+            <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div>
+                  <h2 className="font-display text-lg font-bold text-white">
+                    General Bot &amp; Mini App Settings
+                  </h2>
+                  <p className="text-xs text-zinc-400">
+                    Welcome texts, official channels, minimum withdrawal, and support handle.
+                  </p>
+                </div>
+                {generalSavedMsg && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {generalSavedMsg}
+                  </span>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveGeneral} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="admin-bot-name"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Bot Name
+                    </label>
+                    <input
+                      id="admin-bot-name"
+                      type="text"
+                      required
+                      value={botName}
+                      onChange={(e) => {
+                        setBotName(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-support-username"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Support Username
+                    </label>
+                    <input
+                      id="admin-support-username"
+                      type="text"
+                      required
+                      value={supportUsername}
+                      onChange={(e) => {
+                        setSupportUsername(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-welcome-title"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Welcome Title
+                    </label>
+                    <input
+                      id="admin-welcome-title"
+                      type="text"
+                      required
+                      value={welcomeTitle}
+                      onChange={(e) => {
+                        setWelcomeTitle(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-welcome-subtitle"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Welcome Subtitle
+                    </label>
+                    <input
+                      id="admin-welcome-subtitle"
+                      type="text"
+                      required
+                      value={welcomeSubtitle}
+                      onChange={(e) => {
+                        setWelcomeSubtitle(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-channel1-url"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Channel 1 Link
+                    </label>
+                    <input
+                      id="admin-channel1-url"
+                      type="url"
+                      required
+                      value={channel1Url}
+                      onChange={(e) => {
+                        setChannel1Url(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-channel2-url"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Channel 2 Link
+                    </label>
+                    <input
+                      id="admin-channel2-url"
+                      type="url"
+                      required
+                      value={channel2Url}
+                      onChange={(e) => {
+                        setChannel2Url(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-min-withdraw"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Min Withdraw Amount (USDT)
+                    </label>
+                    <input
+                      id="admin-min-withdraw"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={minWithdrawAmount}
+                      onChange={(e) => {
+                        setMinWithdrawAmount(e.target.value);
+                        setGeneralSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingSection === 'general'}
+                    className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2 transition-all"
+                  >
+                    {savingSection === 'general' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>Save Settings</span>
+                  </button>
+
+                  {generalSavedMsg && (
+                    <span className="text-sm font-bold text-emerald-400">{generalSavedMsg}</span>
+                  )}
+                </div>
+              </form>
+            </section>
+          </div>
         )}
 
         {/* 3. TASK MANAGEMENT TAB */}
         {activeTab === 'tasks' && (
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-            {/* Add / Edit Task Form */}
             <div className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-base font-bold text-white">
@@ -1100,7 +1698,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
               </form>
             </div>
 
-            {/* Tasks List */}
             <div className="lg:col-span-2 space-y-3">
               <div className="flex items-center justify-between px-1">
                 <h2 className="font-display text-base font-bold text-white">
@@ -1270,7 +1867,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                         </button>
                       </div>
 
-                      {/* Balance Summary */}
                       <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#070B09] border border-zinc-800/80 p-3 text-xs">
                         <div>
                           <p className="text-[10px] text-zinc-500">Balance</p>
@@ -1292,7 +1888,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                         </div>
                       </div>
 
-                      {/* Add / Cut Balance Controls */}
                       <div className="flex items-center gap-2">
                         <div className="relative flex-1">
                           <Coins className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />

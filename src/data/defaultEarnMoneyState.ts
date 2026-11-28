@@ -8,9 +8,32 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   welcomeSubtitle: 'Join our 2 official channels to stay updated.',
   channel1Url: 'https://t.me/waincomesite',
   channel2Url: 'https://t.me/premiumapps5462',
-  referBonusAmount: 0.1,
   minWithdrawAmount: 0.8,
   supportUsername: '@waincomesite',
+
+  // 1. Refer System Settings
+  referBonusAmount: 0.1,
+  referMinAdsWatched: 0,
+  referMinChannelsJoined: 0,
+  referMinTasksCompleted: 0,
+  referBonusType: 'after_activation',
+  maxReferPerUser: 0,
+  referLinkFormat: 'https://t.me/moneyxearnbot?start=ref_[USER_ID]',
+
+  // 2. Premium Ads Slot Settings
+  premiumAdsEnabled: true,
+  premiumAdsBudget: 100,
+  perAdViewReward: 0.01,
+  perAdClickReward: 0.02,
+  dailyAdsLimitPerUser: 20,
+  adsSlotPriceForAdvertiser: 5,
+
+  // 3. Maintenance Mode Settings
+  maintenanceMode: false,
+  maintenanceMessage:
+    'Bot is under maintenance. New features coming soon. Please try again later.',
+  maintenanceAdminId: '',
+
   tasks: [
     {
       id: 'task_verify_app',
@@ -50,12 +73,49 @@ export function buildSupportTelegramUrl(supportUsername: string): string {
   return handle ? `https://t.me/${handle}` : 'https://t.me/waincomesite';
 }
 
+export function formatReferralLink(format: string, userId: string): string {
+  const template =
+    (format || '').trim() || 'https://t.me/moneyxearnbot?start=ref_[USER_ID]';
+  if (/\[USER_ID\]|\{USER_ID\}/i.test(template)) {
+    return template.replace(/\[USER_ID\]|\{USER_ID\}/gi, userId);
+  }
+  return `${template}${userId}`;
+}
+
+export function isReferActivationComplete(
+  state: Pick<
+    EarnMoneyState,
+    'adsWatchedTotal' | 'joinedWaincomesite' | 'joinedPremiumApps' | 'completedTaskIds' | 'bonusTasks'
+  >,
+  config: Pick<
+    EarnMoneyConfig,
+    'referMinAdsWatched' | 'referMinChannelsJoined' | 'referMinTasksCompleted'
+  >
+): boolean {
+  const channelsDone = (state.joinedWaincomesite ? 1 : 0) + (state.joinedPremiumApps ? 1 : 0);
+  const tasksDone =
+    state.completedTaskIds?.length ?? state.bonusTasks.filter((t) => t.completed).length;
+
+  return (
+    state.adsWatchedTotal >= config.referMinAdsWatched &&
+    channelsDone >= config.referMinChannelsJoined &&
+    tasksDone >= config.referMinTasksCompleted
+  );
+}
+
 export function createInitialEarnMoneyState(
   userId: string,
   userName: string,
   userAvatar: string,
   config: EarnMoneyConfig = DEFAULT_EARNMONEY_CONFIG
 ): EarnMoneyState {
+  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || 20);
+  const ceiling = Number((dailyTotal * (config.perAdViewReward || 0.01)).toFixed(4));
+  const instantRefer =
+    config.referMinAdsWatched === 0 &&
+    config.referMinChannelsJoined === 0 &&
+    config.referMinTasksCompleted === 0;
+
   return {
     userId,
     userName,
@@ -66,15 +126,15 @@ export function createInitialEarnMoneyState(
     totalIncome: 0,
     totalWithdraw: 0,
     dailyAdsCompleted: 0,
-    dailyAdsTotal: 100,
+    dailyAdsTotal: dailyTotal,
     nextSlotNumber: 1,
-    dailyCeilingUsdt: 0.1,
+    dailyCeilingUsdt: ceiling,
     referralsInvited: 0,
     adsWatchedTotal: 0,
     totalReferrals: 0,
     activeReferrals: 0,
     pendingReferrals: 0,
-    referralActivated: false,
+    referralActivated: instantRefer,
     joinedWaincomesite: false,
     joinedPremiumApps: false,
     activateAdsDone: 0,

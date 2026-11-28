@@ -10,6 +10,8 @@ export type ModalType =
   | 'menu'
   | 'balance_info';
 
+export type ReferBonusType = 'instant' | 'after_activation';
+
 export interface BonusTaskItem {
   id: string;
   title: string;
@@ -27,9 +29,31 @@ export interface EarnMoneyConfig {
   welcomeSubtitle: string;
   channel1Url: string;
   channel2Url: string;
-  referBonusAmount: number;
   minWithdrawAmount: number;
   supportUsername: string;
+
+  // 1. Refer System Settings
+  referBonusAmount: number;
+  referMinAdsWatched: number;
+  referMinChannelsJoined: number;
+  referMinTasksCompleted: number;
+  referBonusType: ReferBonusType;
+  maxReferPerUser: number;
+  referLinkFormat: string;
+
+  // 2. Premium Ads Slot Settings
+  premiumAdsEnabled: boolean;
+  premiumAdsBudget: number;
+  perAdViewReward: number;
+  perAdClickReward: number;
+  dailyAdsLimitPerUser: number;
+  adsSlotPriceForAdvertiser: number;
+
+  // 3. Maintenance Mode Settings
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
+  maintenanceAdminId: string;
+
   tasks: BonusTaskItem[];
   updatedAt: string;
 }
@@ -63,6 +87,7 @@ export interface EarnMoneyState {
   userName: string;
   userAvatar: string;
   isBlocked?: boolean;
+  referredBy?: string;
   totalBalance: number;
   referBalance: number;
   totalIncome: number;

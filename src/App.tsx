@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, ShieldAlert, Wrench } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
 import { BottomNav } from './components/earnmoney/BottomNav';
 import { ForceJoinGate } from './components/earnmoney/ForceJoinGate';
@@ -14,6 +14,8 @@ import {
   createInitialEarnMoneyState,
   DEFAULT_EARNMONEY_CONFIG,
   EARNMONEY_LIVE_CONFIG_KEY,
+  formatReferralLink,
+  isReferActivationComplete,
 } from './data/defaultEarnMoneyState';
 import type {
   BonusTaskItem,
@@ -24,7 +26,6 @@ import type {
 } from './types/earnMoney';
 import { initTelegramWebApp, openExternalTelegramLink } from './utils/telegram';
 
-const TOKEN_KEY = 'cinevault_admin_token';
 const STORAGE_PREFIX = 'earnmoney_user_v3_';
 
 function loadLocalConfig(): EarnMoneyConfig {
@@ -78,6 +79,7 @@ const EarnMoneyApp: React.FC = () => {
   const [state, setState] = useState<EarnMoneyState>(() =>
     loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl, loadLocalConfig())
   );
+  const [serverIsMaintenanceAdmin, setServerIsMaintenanceAdmin] = useState(false);
   const [enteredApp, setEnteredApp] = useState(false);
 
   const [activeTab, setActiveTab] = useState<EarnMoneyTab>('home');
@@ -87,6 +89,10 @@ const EarnMoneyApp: React.FC = () => {
 
   const historyRef = useRef<HTMLElement | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  const isMaintenanceAdmin =
+    serverIsMaintenanceAdmin ||
+    Boolean(config.maintenanceAdminId?.trim() && tgUser.id === config.maintenanceAdminId.trim());
 
   const notify = (msg: string) => {
     setToastMsg(msg);
@@ -132,7 +138,11 @@ const EarnMoneyApp: React.FC = () => {
       const data = (await stateRes.json()) as {
         state?: EarnMoneyState;
         config?: EarnMoneyConfig;
+        isMaintenanceAdmin?: boolean;
       };
+      if (typeof data.isMaintenanceAdmin === 'boolean') {
+        setServerIsMaintenanceAdmin(data.isMaintenanceAdmin);
+      }
       if (data?.config) {
         setConfig(data.config);
         cacheConfig(data.config);
@@ -214,19 +224,33 @@ const EarnMoneyApp: React.FC = () => {
     }
   };
 
-  const handleClaimAdSlot = () => {
-    if (state.dailyAdsCompleted >= state.dailyAdsTotal) {
-      notify('Daily 100 ad slots already completed.');
+  const handleClaimAdSlot = (mode: 'view' | 'click' = 'view') => {
+    if (!config.premiumAdsEnabled || config.premiumAdsBudget <= 0) {
+      notify('Premium Ads Slot Empty');
+      return;
+    }
+    const dailyLimit = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+    if (state.dailyAdsCompleted >= dailyLimit) {
+      notify(`Daily ${dailyLimit} ad slots already completed.`);
       return;
     }
 
     fetch('/api/earnmoney/ad-claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: state.userId }),
+      body: JSON.stringify({ uid: state.userId, mode }),
     })
       .then(async (res) => {
-        const data = (await res.json()) as { state?: EarnMoneyState; error?: string };
+        const data = (await res.json()) as {
+          state?: EarnMoneyState;
+          config?: EarnMoneyConfig;
+          reward?: number;
+          error?: string;
+        };
+        if (data.config) {
+          setConfig(data.config);
+          cacheConfig(data.config);
+        }
         if (!res.ok) {
           notify(data.error || 'Unable to claim ad slot.');
           return;
@@ -235,7 +259,9 @@ const EarnMoneyApp: React.FC = () => {
           setState(data.state);
           cacheState(data.state);
         }
-        notify('+0.0010 USDT added to your balance!');
+        const credited =
+          data.reward ?? (mode === 'click' ? config.perAdClickReward : config.perAdViewReward);
+        notify(`+${credited.toFixed(4)} USDT added to your balance!`);
       })
       .catch(() => {
         notify('Network error while claiming ad slot.');
@@ -256,9 +282,14 @@ const EarnMoneyApp: React.FC = () => {
       .then(async (res) => {
         const data = (await res.json()) as {
           state?: EarnMoneyState;
+          config?: EarnMoneyConfig;
           error?: string;
           alreadyCompleted?: boolean;
         };
+        if (data.config) {
+          setConfig(data.config);
+          cacheConfig(data.config);
+        }
         if (!res.ok) {
           notify(data.error || 'Unable to verify task.');
           return;
@@ -305,7 +336,7 @@ const EarnMoneyApp: React.FC = () => {
   };
 
   const handleCopyInviteLink = () => {
-    const inviteLink = `https://t.me/moneyxearnbot?start=ref_${state.userId}`;
+    const inviteLink = formatReferralLink(config.referLinkFormat, state.userId);
     try {
       void navigator.clipboard.writeText(inviteLink);
     } catch {
@@ -329,20 +360,38 @@ const EarnMoneyApp: React.FC = () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: tgUser.id, channel }),
-    }).catch(() => {
-      // already updated optimistically
-    });
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as { state?: EarnMoneyState };
+        if (data.state) {
+          setState(data.state);
+          cacheState(data.state);
+        }
+      })
+      .catch(() => {
+        // already updated optimistically
+      });
   };
 
   const handleVerifyGate = () => {
+    if (config.maintenanceMode && !isMaintenanceAdmin) {
+      notify(config.maintenanceMessage);
+      return;
+    }
     setActiveTab('home');
     setEnteredApp(true);
     notify(`Welcome to ${config.botName}!`);
   };
 
   const handleVerifyActivate = () => {
-    if (!state.joinedWaincomesite || !state.joinedPremiumApps || state.activateAdsDone < 3) {
-      notify('Join both channels and watch 3 ads to activate referral rewards.');
+    if (!isReferActivationComplete(state, config)) {
+      const minAds = config.referMinAdsWatched || 0;
+      if (minAds > 0 && (state.adsWatchedTotal || 0) < minAds) {
+        notify(`Watch ${minAds} Ads to Activate Refer.`);
+      } else {
+        notify('Complete the required refer activation rules first.');
+      }
       return;
     }
 
@@ -413,6 +462,36 @@ const EarnMoneyApp: React.FC = () => {
       return { ok: false, message: 'Network error while submitting withdrawal.' };
     }
   };
+
+  if (config.maintenanceMode && !isMaintenanceAdmin) {
+    const supportUrl = buildSupportTelegramUrl(config.supportUsername);
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#F2F4F7] px-4 py-8 text-[#111827]">
+        <div className="mf-card-3d w-full max-w-md space-y-4 p-6 text-center">
+          <div className="mf-icon-circle mx-auto flex h-14 w-14 items-center justify-center">
+            <Wrench className="h-7 w-7 text-[#00944A]" />
+          </div>
+          <h1 className="font-display text-xl font-extrabold text-[#111827]">
+            Maintenance Mode
+          </h1>
+          <p className="text-sm font-medium leading-relaxed text-slate-600">
+            {config.maintenanceMessage}
+          </p>
+          <a
+            href={supportUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (openExternalTelegramLink(supportUrl)) e.preventDefault();
+            }}
+            className="mf-btn-outline-3d flex min-h-[46px] w-full items-center justify-center px-4 py-2.5 text-xs font-extrabold"
+          >
+            Support ({config.supportUsername})
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (state.isBlocked) {
     const supportUrl = buildSupportTelegramUrl(config.supportUsername);
@@ -489,6 +568,7 @@ const EarnMoneyApp: React.FC = () => {
         {activeTab === 'tasks' && (
           <TasksView
             state={state}
+            config={config}
             onOpenModal={setActiveModal}
             onCompleteBonusTask={handleCompleteBonusTask}
           />
@@ -537,26 +617,10 @@ export default function App() {
   const isAdminRoute =
     typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
 
-  const [adminToken, setAdminTokenState] = useState<string | null>(() => {
-    try {
-      return window.sessionStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  });
-
-  const handleSetAdminToken = (token: string | null) => {
-    setAdminTokenState(token);
-    try {
-      if (token) window.sessionStorage.setItem(TOKEN_KEY, token);
-      else window.sessionStorage.removeItem(TOKEN_KEY);
-    } catch {
-      // ignore storage errors
-    }
-  };
+  const [adminToken, setAdminTokenState] = useState<string | null>(null);
 
   if (isAdminRoute) {
-    return <AdminPanel adminToken={adminToken} onSetAdminToken={handleSetAdminToken} />;
+    return <AdminPanel adminToken={adminToken} onSetAdminToken={setAdminTokenState} />;
   }
 
   return <EarnMoneyApp />;

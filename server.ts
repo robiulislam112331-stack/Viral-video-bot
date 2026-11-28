@@ -240,9 +240,29 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   welcomeSubtitle: 'Join our 2 official channels to stay updated.',
   channel1Url: 'https://t.me/waincomesite',
   channel2Url: 'https://t.me/premiumapps5462',
-  referBonusAmount: 0.1,
   minWithdrawAmount: 0.8,
   supportUsername: '@waincomesite',
+
+  referBonusAmount: 0.1,
+  referMinAdsWatched: 0,
+  referMinChannelsJoined: 0,
+  referMinTasksCompleted: 0,
+  referBonusType: 'after_activation',
+  maxReferPerUser: 0,
+  referLinkFormat: 'https://t.me/moneyxearnbot?start=ref_[USER_ID]',
+
+  premiumAdsEnabled: true,
+  premiumAdsBudget: 100,
+  perAdViewReward: 0.01,
+  perAdClickReward: 0.02,
+  dailyAdsLimitPerUser: 20,
+  adsSlotPriceForAdvertiser: 5,
+
+  maintenanceMode: false,
+  maintenanceMessage:
+    'Bot is under maintenance. New features coming soon. Please try again later.',
+  maintenanceAdminId: '',
+
   tasks: [
     {
       id: 'task_verify_app',
@@ -279,6 +299,9 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
         }))
       : structuredClone(DEFAULT_EARNMONEY_CONFIG.tasks);
 
+    const numOr = (val: unknown, fallback: number, min = 0) =>
+      typeof val === 'number' && Number.isFinite(val) && val >= min ? val : fallback;
+
     return {
       botName:
         typeof parsed.botName === 'string' && parsed.botName.trim()
@@ -300,22 +323,60 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
         typeof parsed.channel2Url === 'string' && parsed.channel2Url.trim()
           ? parsed.channel2Url.trim()
           : DEFAULT_EARNMONEY_CONFIG.channel2Url,
-      referBonusAmount:
-        typeof parsed.referBonusAmount === 'number' &&
-        Number.isFinite(parsed.referBonusAmount) &&
-        parsed.referBonusAmount >= 0
-          ? parsed.referBonusAmount
-          : DEFAULT_EARNMONEY_CONFIG.referBonusAmount,
-      minWithdrawAmount:
-        typeof parsed.minWithdrawAmount === 'number' &&
-        Number.isFinite(parsed.minWithdrawAmount) &&
-        parsed.minWithdrawAmount >= 0
-          ? parsed.minWithdrawAmount
-          : DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount,
+      minWithdrawAmount: numOr(parsed.minWithdrawAmount, DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount),
       supportUsername:
         typeof parsed.supportUsername === 'string' && parsed.supportUsername.trim()
           ? parsed.supportUsername.trim()
           : DEFAULT_EARNMONEY_CONFIG.supportUsername,
+
+      referBonusAmount: numOr(parsed.referBonusAmount, DEFAULT_EARNMONEY_CONFIG.referBonusAmount),
+      referMinAdsWatched: Math.floor(
+        numOr(parsed.referMinAdsWatched, DEFAULT_EARNMONEY_CONFIG.referMinAdsWatched)
+      ),
+      referMinChannelsJoined: Math.floor(
+        numOr(parsed.referMinChannelsJoined, DEFAULT_EARNMONEY_CONFIG.referMinChannelsJoined)
+      ),
+      referMinTasksCompleted: Math.floor(
+        numOr(parsed.referMinTasksCompleted, DEFAULT_EARNMONEY_CONFIG.referMinTasksCompleted)
+      ),
+      referBonusType:
+        parsed.referBonusType === 'instant' || parsed.referBonusType === 'after_activation'
+          ? parsed.referBonusType
+          : DEFAULT_EARNMONEY_CONFIG.referBonusType,
+      maxReferPerUser: Math.floor(
+        numOr(parsed.maxReferPerUser, DEFAULT_EARNMONEY_CONFIG.maxReferPerUser)
+      ),
+      referLinkFormat:
+        typeof parsed.referLinkFormat === 'string' && parsed.referLinkFormat.trim()
+          ? parsed.referLinkFormat.trim()
+          : DEFAULT_EARNMONEY_CONFIG.referLinkFormat,
+
+      premiumAdsEnabled:
+        typeof parsed.premiumAdsEnabled === 'boolean'
+          ? parsed.premiumAdsEnabled
+          : DEFAULT_EARNMONEY_CONFIG.premiumAdsEnabled,
+      premiumAdsBudget: numOr(parsed.premiumAdsBudget, DEFAULT_EARNMONEY_CONFIG.premiumAdsBudget),
+      perAdViewReward: numOr(parsed.perAdViewReward, DEFAULT_EARNMONEY_CONFIG.perAdViewReward),
+      perAdClickReward: numOr(parsed.perAdClickReward, DEFAULT_EARNMONEY_CONFIG.perAdClickReward),
+      dailyAdsLimitPerUser: Math.max(
+        1,
+        Math.floor(numOr(parsed.dailyAdsLimitPerUser, DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser, 1))
+      ),
+      adsSlotPriceForAdvertiser: numOr(
+        parsed.adsSlotPriceForAdvertiser,
+        DEFAULT_EARNMONEY_CONFIG.adsSlotPriceForAdvertiser
+      ),
+
+      maintenanceMode: Boolean(parsed.maintenanceMode),
+      maintenanceMessage:
+        typeof parsed.maintenanceMessage === 'string' && parsed.maintenanceMessage.trim()
+          ? parsed.maintenanceMessage.trim()
+          : DEFAULT_EARNMONEY_CONFIG.maintenanceMessage,
+      maintenanceAdminId:
+        typeof parsed.maintenanceAdminId === 'string'
+          ? parsed.maintenanceAdminId.trim()
+          : DEFAULT_EARNMONEY_CONFIG.maintenanceAdminId,
+
       tasks,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
     };
@@ -336,11 +397,39 @@ type ServerEarnMoneyState = EarnMoneyState;
 
 type EarnMoneyUserMap = Record<string, ServerEarnMoneyState>;
 
+function isMaintenanceAdmin(uid: string): boolean {
+  if (!uid) return false;
+  const envAdminId = process.env.ADMIN_TELEGRAM_ID?.trim() || '';
+  const cfgAdminId = (earnMoneyConfig.maintenanceAdminId || '').trim();
+  return Boolean((envAdminId && uid === envAdminId) || (cfgAdminId && uid === cfgAdminId));
+}
+
+function isMaintenanceBlockedForUser(uid: string): boolean {
+  return Boolean(earnMoneyConfig.maintenanceMode) && !isMaintenanceAdmin(uid);
+}
+
+function isActivationRuleMetForUser(user: ServerEarnMoneyState): boolean {
+  const channelsDone = (user.joinedWaincomesite ? 1 : 0) + (user.joinedPremiumApps ? 1 : 0);
+  const tasksDone = Array.isArray(user.completedTaskIds) ? user.completedTaskIds.length : 0;
+  return (
+    (user.adsWatchedTotal || 0) >= earnMoneyConfig.referMinAdsWatched &&
+    channelsDone >= earnMoneyConfig.referMinChannelsJoined &&
+    tasksDone >= earnMoneyConfig.referMinTasksCompleted
+  );
+}
+
 function createZeroEarnMoneyUser(
   userId: string,
   userName: string,
   userAvatar: string
 ): ServerEarnMoneyState {
+  const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+  const ceiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
+  const instantRefer =
+    earnMoneyConfig.referMinAdsWatched === 0 &&
+    earnMoneyConfig.referMinChannelsJoined === 0 &&
+    earnMoneyConfig.referMinTasksCompleted === 0;
+
   return {
     userId,
     userName: userName || 'Earn Money User',
@@ -351,15 +440,15 @@ function createZeroEarnMoneyUser(
     totalIncome: 0,
     totalWithdraw: 0,
     dailyAdsCompleted: 0,
-    dailyAdsTotal: 100,
+    dailyAdsTotal: dailyTotal,
     nextSlotNumber: 1,
-    dailyCeilingUsdt: 0.1,
+    dailyCeilingUsdt: ceiling,
     referralsInvited: 0,
     adsWatchedTotal: 0,
     totalReferrals: 0,
     activeReferrals: 0,
     pendingReferrals: 0,
-    referralActivated: false,
+    referralActivated: instantRefer,
     joinedWaincomesite: false,
     joinedPremiumApps: false,
     activateAdsDone: 0,
@@ -393,14 +482,25 @@ function syncUserWithConfig(user: ServerEarnMoneyState): ServerEarnMoneyState {
       completed: t.completed || completedSet.has(t.id),
     }));
 
-  return {
+  const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+  const dailyCeiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
+  const dailyCompleted = Math.min(dailyTotal, user.dailyAdsCompleted || 0);
+
+  const syncedBase: ServerEarnMoneyState = {
     ...user,
     isBlocked: Boolean(user.isBlocked),
+    dailyAdsTotal: dailyTotal,
+    dailyAdsCompleted: dailyCompleted,
+    nextSlotNumber: Math.min(dailyTotal, dailyCompleted + 1),
+    dailyCeilingUsdt: dailyCeiling,
     completedTaskIds: Array.from(completedSet),
     bonusTasks: [...adminTasks, ...userCustomTasks],
     referralsList: Array.isArray(user.referralsList) ? user.referralsList : [],
     withdrawHistory: Array.isArray(user.withdrawHistory) ? user.withdrawHistory : [],
   };
+
+  syncedBase.referralActivated = isActivationRuleMetForUser(syncedBase);
+  return syncedBase;
 }
 
 function loadEarnMoneyUsers(): EarnMoneyUserMap {
@@ -717,6 +817,18 @@ async function startServer() {
     const alreadyListed = referrer.referralsList.some((r) => r.id === `ref_${uid}`);
     if (alreadyListed) return;
 
+    if (
+      earnMoneyConfig.maxReferPerUser > 0 &&
+      referrer.referralsList.length >= earnMoneyConfig.maxReferPerUser
+    ) {
+      return;
+    }
+
+    const user = earnMoneyUsers[uid];
+    if (user) {
+      user.referredBy = refUid;
+    }
+
     const cleanUsername = `@${
       name.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || `user_${uid.slice(-4)}`
     }`;
@@ -728,18 +840,63 @@ async function startServer() {
         .map((p) => p[0]?.toUpperCase() || '')
         .join('') || 'EM';
 
+    const instantCredit =
+      earnMoneyConfig.referBonusType === 'instant' ||
+      (user ? isActivationRuleMetForUser(user) : false);
+
     referrer.referralsInvited += 1;
     referrer.totalReferrals += 1;
-    referrer.pendingReferrals += 1;
-    referrer.referralsList.unshift({
-      id: `ref_${uid}`,
-      username: cleanUsername,
-      initials,
-      channelsJoined: 0,
-      adsWatched: 0,
-      status: 'PENDING',
-      rewardUsdt: 0,
-    });
+
+    if (instantCredit) {
+      const bonus = earnMoneyConfig.referBonusAmount;
+      referrer.activeReferrals += 1;
+      referrer.referBalance = Number((referrer.referBalance + bonus).toFixed(4));
+      referrer.totalBalance = Number((referrer.totalBalance + bonus).toFixed(4));
+      referrer.totalIncome = Number((referrer.totalIncome + bonus).toFixed(4));
+      referrer.referralsList.unshift({
+        id: `ref_${uid}`,
+        username: cleanUsername,
+        initials,
+        channelsJoined: 0,
+        adsWatched: 0,
+        status: 'ACTIVE',
+        rewardUsdt: bonus,
+      });
+    } else {
+      referrer.pendingReferrals += 1;
+      referrer.referralsList.unshift({
+        id: `ref_${uid}`,
+        username: cleanUsername,
+        initials,
+        channelsJoined: 0,
+        adsWatched: 0,
+        status: 'PENDING',
+        rewardUsdt: 0,
+      });
+    }
+  }
+
+  function evaluateReferralProgressAndCredit(user: ServerEarnMoneyState): void {
+    if (!user.referredBy) return;
+    const referrer = earnMoneyUsers[user.referredBy];
+    if (!referrer) return;
+
+    const entry = referrer.referralsList.find((r) => r.id === `ref_${user.userId}`);
+    if (!entry) return;
+
+    entry.channelsJoined = (user.joinedWaincomesite ? 1 : 0) + (user.joinedPremiumApps ? 1 : 0);
+    entry.adsWatched = user.adsWatchedTotal;
+
+    if (entry.status === 'PENDING' && isActivationRuleMetForUser(user)) {
+      const bonus = earnMoneyConfig.referBonusAmount;
+      entry.status = 'ACTIVE';
+      entry.rewardUsdt = bonus;
+      referrer.activeReferrals += 1;
+      referrer.pendingReferrals = Math.max(0, referrer.pendingReferrals - 1);
+      referrer.referBalance = Number((referrer.referBalance + bonus).toFixed(4));
+      referrer.totalBalance = Number((referrer.totalBalance + bonus).toFixed(4));
+      referrer.totalIncome = Number((referrer.totalIncome + bonus).toFixed(4));
+    }
   }
 
   app.get('/api/earnmoney/config', (_req, res) => {
@@ -776,6 +933,7 @@ async function startServer() {
     res.json({
       state: syncUserWithConfig(earnMoneyUsers[uid]),
       config: earnMoneyConfig,
+      isMaintenanceAdmin: isMaintenanceAdmin(uid),
     });
   });
 
@@ -789,6 +947,13 @@ async function startServer() {
     const uid = rawUid.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     if (!uid) {
       res.status(400).json({ error: 'Valid userId is required.' });
+      return;
+    }
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
       return;
     }
 
@@ -807,7 +972,6 @@ async function startServer() {
       return;
     }
 
-    // Preserve admin-governed fields (isBlocked, balances, withdrawHistory) when syncing client UI state
     earnMoneyUsers[uid] = {
       ...base,
       userName:
@@ -820,9 +984,9 @@ async function startServer() {
           : base.userAvatar,
       joinedWaincomesite: Boolean(incoming.joinedWaincomesite ?? base.joinedWaincomesite),
       joinedPremiumApps: Boolean(incoming.joinedPremiumApps ?? base.joinedPremiumApps),
-      referralActivated: Boolean(incoming.referralActivated ?? base.referralActivated),
       userId: uid,
     };
+    evaluateReferralProgressAndCredit(earnMoneyUsers[uid]);
     saveEarnMoneyUsers(earnMoneyUsers);
     res.json({ ok: true, state: syncUserWithConfig(earnMoneyUsers[uid]) });
   });
@@ -830,8 +994,16 @@ async function startServer() {
   app.post('/api/earnmoney/ad-claim', (req, res) => {
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const mode = req.body?.mode === 'click' ? 'click' : 'view';
     if (!uid) {
       res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
       return;
     }
 
@@ -846,22 +1018,44 @@ async function startServer() {
       res.status(403).json({ error: 'Your account has been blocked by admin.' });
       return;
     }
-    if (user.dailyAdsCompleted >= user.dailyAdsTotal) {
-      res.status(400).json({ error: 'Daily 100 ad slots already completed.' });
+    if (!earnMoneyConfig.premiumAdsEnabled || earnMoneyConfig.premiumAdsBudget <= 0) {
+      res.status(400).json({ error: 'Premium Ads Slot Empty' });
       return;
     }
 
-    const reward = 0.001;
+    const dailyLimit = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+    if (user.dailyAdsCompleted >= dailyLimit) {
+      res.status(400).json({ error: `Daily ${dailyLimit} ad slots already completed.` });
+      return;
+    }
+
+    const requestedReward =
+      mode === 'click' ? earnMoneyConfig.perAdClickReward : earnMoneyConfig.perAdViewReward;
+    const reward = Number(Math.min(requestedReward, earnMoneyConfig.premiumAdsBudget).toFixed(4));
+    if (reward <= 0) {
+      res.status(400).json({ error: 'Premium Ads Slot Empty' });
+      return;
+    }
+
+    earnMoneyConfig.premiumAdsBudget = Math.max(
+      0,
+      Number((earnMoneyConfig.premiumAdsBudget - reward).toFixed(4))
+    );
+    earnMoneyConfig.updatedAt = new Date().toISOString();
+    saveEarnMoneyConfig(earnMoneyConfig);
+
     user.totalBalance = Number((user.totalBalance + reward).toFixed(4));
     user.totalIncome = Number((user.totalIncome + reward).toFixed(4));
-    user.dailyAdsCompleted = Math.min(user.dailyAdsTotal, user.dailyAdsCompleted + 1);
-    user.nextSlotNumber = Math.min(user.dailyAdsTotal, user.nextSlotNumber + 1);
+    user.dailyAdsCompleted = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
+    user.dailyAdsTotal = dailyLimit;
+    user.nextSlotNumber = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
     user.adsWatchedTotal += 1;
-    user.activateAdsDone = Math.min(3, user.activateAdsDone + 1);
+    user.activateAdsDone = user.adsWatchedTotal;
 
+    evaluateReferralProgressAndCredit(user);
     earnMoneyUsers[uid] = user;
     saveEarnMoneyUsers(earnMoneyUsers);
-    res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig });
+    res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig, reward });
   });
 
   app.post('/api/earnmoney/tasks/complete', (req, res) => {
@@ -870,6 +1064,13 @@ async function startServer() {
     const taskId = typeof req.body?.taskId === 'string' ? req.body.taskId.trim() : '';
     if (!uid || !taskId) {
       res.status(400).json({ error: 'Valid uid and taskId are required.' });
+      return;
+    }
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
       return;
     }
 
@@ -907,6 +1108,7 @@ async function startServer() {
     user.totalBalance = Number((user.totalBalance + targetTask.rewardUsdt).toFixed(4));
     user.totalIncome = Number((user.totalIncome + targetTask.rewardUsdt).toFixed(4));
 
+    evaluateReferralProgressAndCredit(user);
     earnMoneyUsers[uid] = user;
     saveEarnMoneyUsers(earnMoneyUsers);
     res.json({
@@ -922,6 +1124,14 @@ async function startServer() {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
     const rewardUsdt = Number(req.body?.rewardUsdt);
     const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
+      return;
+    }
 
     if (!uid || title.length < 3 || !Number.isFinite(rewardUsdt) || rewardUsdt <= 0 || rewardUsdt > 50 || !isSafeUrl(url, false)) {
       res.status(400).json({ error: 'Invalid custom task parameters.' });
@@ -963,16 +1173,36 @@ async function startServer() {
       res.status(400).json({ error: 'Valid uid is required.' });
       return;
     }
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
+      return;
+    }
 
     const user = earnMoneyUsers[uid];
-    if (!user.joinedWaincomesite || !user.joinedPremiumApps || user.activateAdsDone < 3) {
+    if (!isActivationRuleMetForUser(user)) {
+      const parts: string[] = [];
+      if (earnMoneyConfig.referMinAdsWatched > 0 && user.adsWatchedTotal < earnMoneyConfig.referMinAdsWatched) {
+        parts.push(`Watch ${earnMoneyConfig.referMinAdsWatched} Ads`);
+      }
+      const chDone = (user.joinedWaincomesite ? 1 : 0) + (user.joinedPremiumApps ? 1 : 0);
+      if (earnMoneyConfig.referMinChannelsJoined > 0 && chDone < earnMoneyConfig.referMinChannelsJoined) {
+        parts.push(`Join ${earnMoneyConfig.referMinChannelsJoined} Channels`);
+      }
+      const tasksDone = (user.completedTaskIds || []).length;
+      if (earnMoneyConfig.referMinTasksCompleted > 0 && tasksDone < earnMoneyConfig.referMinTasksCompleted) {
+        parts.push(`Complete ${earnMoneyConfig.referMinTasksCompleted} Tasks`);
+      }
       res.status(400).json({
-        error: 'Join both channels and watch 3 ads to activate referral rewards.',
+        error: `${parts.join(', ') || 'Complete activation rules'} to activate referral rewards.`,
       });
       return;
     }
 
     user.referralActivated = true;
+    evaluateReferralProgressAndCredit(user);
     saveEarnMoneyUsers(earnMoneyUsers);
     res.json({ state: syncUserWithConfig(user) });
   });
@@ -985,6 +1215,13 @@ async function startServer() {
 
     if (!uid) {
       res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
       return;
     }
 
@@ -1047,6 +1284,14 @@ async function startServer() {
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const channel = req.body?.channel;
 
+    if (isMaintenanceBlockedForUser(uid)) {
+      res.status(503).json({
+        error: earnMoneyConfig.maintenanceMessage,
+        maintenanceMode: true,
+      });
+      return;
+    }
+
     if (!uid || (channel !== 'waincomesite' && channel !== 'premiumapps')) {
       res.status(400).json({ error: 'Valid uid and channel are required.' });
       return;
@@ -1065,12 +1310,14 @@ async function startServer() {
     } else {
       earnMoneyUsers[uid].joinedPremiumApps = true;
     }
+    evaluateReferralProgressAndCredit(earnMoneyUsers[uid]);
     saveEarnMoneyUsers(earnMoneyUsers);
 
     res.json({
       ok: true,
       joinedWaincomesite: earnMoneyUsers[uid].joinedWaincomesite,
       joinedPremiumApps: earnMoneyUsers[uid].joinedPremiumApps,
+      state: syncUserWithConfig(earnMoneyUsers[uid]),
     });
   });
 
@@ -1122,6 +1369,16 @@ async function startServer() {
         'Earn Money User';
 
       if (text.startsWith('/start')) {
+        if (isMaintenanceBlockedForUser(uid)) {
+          if (botToken) {
+            await telegramBotApiCall(botToken, 'sendMessage', {
+              chat_id: chatId,
+              text: earnMoneyConfig.maintenanceMessage,
+            });
+          }
+          return;
+        }
+
         const refMatch = text.match(/ref_([a-zA-Z0-9_-]{4,64})/);
         const refUid = refMatch ? refMatch[1] : '';
 
@@ -1155,8 +1412,18 @@ async function startServer() {
 
     if (update?.callback_query?.id && update.callback_query.data === 'verify_membership') {
       const chatId = update.callback_query.message?.chat?.id;
+      const cbUid = String(update.callback_query.from?.id ?? '').replace(/[^0-9]/g, '');
 
       if (botToken) {
+        if (isMaintenanceBlockedForUser(cbUid)) {
+          await telegramBotApiCall(botToken, 'answerCallbackQuery', {
+            callback_query_id: update.callback_query.id,
+            text: earnMoneyConfig.maintenanceMessage.slice(0, 180),
+            show_alert: true,
+          });
+          return;
+        }
+
         await telegramBotApiCall(botToken, 'answerCallbackQuery', {
           callback_query_id: update.callback_query.id,
           text: `Opening ${earnMoneyConfig.botName}...`,
@@ -1552,24 +1819,102 @@ async function startServer() {
   });
 
   app.put('/api/admin/earnmoney/settings', requireAdmin, (req, res) => {
+    const body = (req.body || {}) as Partial<EarnMoneyConfig>;
+
     const botName =
-      typeof req.body?.botName === 'string' ? req.body.botName.trim().slice(0, 80) : '';
+      body.botName !== undefined
+        ? String(body.botName).trim().slice(0, 80)
+        : earnMoneyConfig.botName;
     const welcomeTitle =
-      typeof req.body?.welcomeTitle === 'string' ? req.body.welcomeTitle.trim().slice(0, 140) : '';
+      body.welcomeTitle !== undefined
+        ? String(body.welcomeTitle).trim().slice(0, 140)
+        : earnMoneyConfig.welcomeTitle;
     const welcomeSubtitle =
-      typeof req.body?.welcomeSubtitle === 'string'
-        ? req.body.welcomeSubtitle.trim().slice(0, 240)
-        : '';
+      body.welcomeSubtitle !== undefined
+        ? String(body.welcomeSubtitle).trim().slice(0, 240)
+        : earnMoneyConfig.welcomeSubtitle;
     const channel1Url =
-      typeof req.body?.channel1Url === 'string' ? req.body.channel1Url.trim() : '';
+      body.channel1Url !== undefined ? String(body.channel1Url).trim() : earnMoneyConfig.channel1Url;
     const channel2Url =
-      typeof req.body?.channel2Url === 'string' ? req.body.channel2Url.trim() : '';
-    const referBonusAmount = Number(req.body?.referBonusAmount);
-    const minWithdrawAmount = Number(req.body?.minWithdrawAmount);
+      body.channel2Url !== undefined ? String(body.channel2Url).trim() : earnMoneyConfig.channel2Url;
+    const minWithdrawAmount =
+      body.minWithdrawAmount !== undefined
+        ? Number(body.minWithdrawAmount)
+        : earnMoneyConfig.minWithdrawAmount;
     const supportUsername =
-      typeof req.body?.supportUsername === 'string'
-        ? req.body.supportUsername.trim().slice(0, 80)
-        : '';
+      body.supportUsername !== undefined
+        ? String(body.supportUsername).trim().slice(0, 80)
+        : earnMoneyConfig.supportUsername;
+
+    // 1. Refer System Settings
+    const referBonusAmount =
+      body.referBonusAmount !== undefined
+        ? Number(body.referBonusAmount)
+        : earnMoneyConfig.referBonusAmount;
+    const referMinAdsWatched =
+      body.referMinAdsWatched !== undefined
+        ? Number(body.referMinAdsWatched)
+        : earnMoneyConfig.referMinAdsWatched;
+    const referMinChannelsJoined =
+      body.referMinChannelsJoined !== undefined
+        ? Number(body.referMinChannelsJoined)
+        : earnMoneyConfig.referMinChannelsJoined;
+    const referMinTasksCompleted =
+      body.referMinTasksCompleted !== undefined
+        ? Number(body.referMinTasksCompleted)
+        : earnMoneyConfig.referMinTasksCompleted;
+    const referBonusType =
+      body.referBonusType === 'instant' || body.referBonusType === 'after_activation'
+        ? body.referBonusType
+        : earnMoneyConfig.referBonusType;
+    const maxReferPerUser =
+      body.maxReferPerUser !== undefined
+        ? Number(body.maxReferPerUser)
+        : earnMoneyConfig.maxReferPerUser;
+    const referLinkFormat =
+      body.referLinkFormat !== undefined
+        ? String(body.referLinkFormat).trim().slice(0, 200)
+        : earnMoneyConfig.referLinkFormat;
+
+    // 2. Premium Ads Slot Settings
+    const premiumAdsEnabled =
+      typeof body.premiumAdsEnabled === 'boolean'
+        ? body.premiumAdsEnabled
+        : earnMoneyConfig.premiumAdsEnabled;
+    const premiumAdsBudget =
+      body.premiumAdsBudget !== undefined
+        ? Number(body.premiumAdsBudget)
+        : earnMoneyConfig.premiumAdsBudget;
+    const perAdViewReward =
+      body.perAdViewReward !== undefined
+        ? Number(body.perAdViewReward)
+        : earnMoneyConfig.perAdViewReward;
+    const perAdClickReward =
+      body.perAdClickReward !== undefined
+        ? Number(body.perAdClickReward)
+        : earnMoneyConfig.perAdClickReward;
+    const dailyAdsLimitPerUser =
+      body.dailyAdsLimitPerUser !== undefined
+        ? Number(body.dailyAdsLimitPerUser)
+        : earnMoneyConfig.dailyAdsLimitPerUser;
+    const adsSlotPriceForAdvertiser =
+      body.adsSlotPriceForAdvertiser !== undefined
+        ? Number(body.adsSlotPriceForAdvertiser)
+        : earnMoneyConfig.adsSlotPriceForAdvertiser;
+
+    // 3. Maintenance Mode Settings
+    const maintenanceMode =
+      typeof body.maintenanceMode === 'boolean'
+        ? body.maintenanceMode
+        : earnMoneyConfig.maintenanceMode;
+    const maintenanceMessage =
+      body.maintenanceMessage !== undefined
+        ? String(body.maintenanceMessage).trim().slice(0, 500)
+        : earnMoneyConfig.maintenanceMessage;
+    const maintenanceAdminId =
+      body.maintenanceAdminId !== undefined
+        ? String(body.maintenanceAdminId).trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64)
+        : earnMoneyConfig.maintenanceAdminId;
 
     if (!botName || !welcomeTitle || !welcomeSubtitle) {
       res.status(400).json({ error: 'Bot Name, Welcome Title, and Welcome Subtitle are required.' });
@@ -1579,16 +1924,36 @@ async function startServer() {
       res.status(400).json({ error: 'Channel 1 and Channel 2 links must be valid http/https URLs.' });
       return;
     }
-    if (!Number.isFinite(referBonusAmount) || referBonusAmount < 0 || referBonusAmount > 1000) {
-      res.status(400).json({ error: 'Refer Bonus Amount must be a valid non-negative number.' });
+    if (!referLinkFormat || !isSafeUrl(referLinkFormat.replace(/\[USER_ID\]|\{USER_ID\}/gi, '12345'), false)) {
+      res.status(400).json({ error: 'Refer Link Format must be a valid http/https URL.' });
       return;
     }
-    if (!Number.isFinite(minWithdrawAmount) || minWithdrawAmount < 0 || minWithdrawAmount > 10000) {
-      res.status(400).json({ error: 'Min Withdraw Amount must be a valid non-negative number.' });
+    const nonNegativeNumbers = [
+      referBonusAmount,
+      minWithdrawAmount,
+      referMinAdsWatched,
+      referMinChannelsJoined,
+      referMinTasksCompleted,
+      maxReferPerUser,
+      premiumAdsBudget,
+      perAdViewReward,
+      perAdClickReward,
+      adsSlotPriceForAdvertiser,
+    ];
+    if (nonNegativeNumbers.some((n) => !Number.isFinite(n) || n < 0)) {
+      res.status(400).json({ error: 'Numeric reward, rule, and budget values must be 0 or higher.' });
+      return;
+    }
+    if (!Number.isFinite(dailyAdsLimitPerUser) || dailyAdsLimitPerUser < 1 || dailyAdsLimitPerUser > 1000) {
+      res.status(400).json({ error: 'Daily Ads Limit Per User must be between 1 and 1000.' });
       return;
     }
     if (!supportUsername) {
       res.status(400).json({ error: 'Support Username is required.' });
+      return;
+    }
+    if (!maintenanceMessage) {
+      res.status(400).json({ error: 'Maintenance Message cannot be empty.' });
       return;
     }
 
@@ -1599,11 +1964,31 @@ async function startServer() {
       welcomeSubtitle,
       channel1Url,
       channel2Url,
-      referBonusAmount: Number(referBonusAmount.toFixed(4)),
       minWithdrawAmount: Number(minWithdrawAmount.toFixed(4)),
-      supportUsername: supportUsername.startsWith('@') || supportUsername.startsWith('http')
-        ? supportUsername
-        : `@${supportUsername}`,
+      supportUsername:
+        supportUsername.startsWith('@') || supportUsername.startsWith('http')
+          ? supportUsername
+          : `@${supportUsername}`,
+
+      referBonusAmount: Number(referBonusAmount.toFixed(4)),
+      referMinAdsWatched: Math.floor(referMinAdsWatched),
+      referMinChannelsJoined: Math.floor(referMinChannelsJoined),
+      referMinTasksCompleted: Math.floor(referMinTasksCompleted),
+      referBonusType,
+      maxReferPerUser: Math.floor(maxReferPerUser),
+      referLinkFormat,
+
+      premiumAdsEnabled,
+      premiumAdsBudget: Number(premiumAdsBudget.toFixed(4)),
+      perAdViewReward: Number(perAdViewReward.toFixed(4)),
+      perAdClickReward: Number(perAdClickReward.toFixed(4)),
+      dailyAdsLimitPerUser: Math.floor(dailyAdsLimitPerUser),
+      adsSlotPriceForAdvertiser: Number(adsSlotPriceForAdvertiser.toFixed(4)),
+
+      maintenanceMode,
+      maintenanceMessage,
+      maintenanceAdminId,
+
       updatedAt: new Date().toISOString(),
     };
     saveEarnMoneyConfig(earnMoneyConfig);

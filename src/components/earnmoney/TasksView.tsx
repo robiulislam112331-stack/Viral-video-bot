@@ -1,24 +1,31 @@
 import React from 'react';
 import { CheckCircle2, Flame, PlayCircle, PlusCircle, ShieldCheck } from 'lucide-react';
-import type { BonusTaskItem, EarnMoneyState, ModalType } from '../../types/earnMoney';
+import type {
+  BonusTaskItem,
+  EarnMoneyConfig,
+  EarnMoneyState,
+  ModalType,
+} from '../../types/earnMoney';
 
 interface TasksViewProps {
   state: EarnMoneyState;
+  config: EarnMoneyConfig;
   onOpenModal: (modal: ModalType) => void;
   onCompleteBonusTask: (task: BonusTaskItem) => void;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
   state,
+  config,
   onOpenModal,
   onCompleteBonusTask,
 }) => {
   const visibleTasks = state.bonusTasks.filter((t) => t.active !== false);
   const availableTasksCount = visibleTasks.filter((t) => !t.completed).length;
-  const progressPct = Math.min(
-    100,
-    Math.round((state.dailyAdsCompleted / state.dailyAdsTotal) * 100)
-  );
+  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
+  const progressPct = Math.min(100, Math.round((state.dailyAdsCompleted / dailyTotal) * 100));
+  const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
 
   return (
     <div className="space-y-5">
@@ -34,19 +41,26 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 <h2 className="font-display text-base font-extrabold text-[#111827]">
                   Premium Ads
                 </h2>
-                <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-extrabold text-orange-600">
-                  <Flame className="h-3 w-3" />
-                  HOT
-                </span>
+                {adsSlotEmpty ? (
+                  <span className="inline-flex items-center rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-extrabold text-red-600">
+                    EMPTY
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-extrabold text-orange-600">
+                    <Flame className="h-3 w-3" />
+                    HOT
+                  </span>
+                )}
               </div>
               <p className="text-xs font-medium text-slate-500">
-                Daily Limit: {state.dailyAdsCompleted}/{state.dailyAdsTotal} (Max $
-                {state.dailyCeilingUsdt.toFixed(4)})
+                {adsSlotEmpty
+                  ? 'Premium Ads Slot Empty'
+                  : `Daily Limit: ${state.dailyAdsCompleted}/${dailyTotal} (Max $${dailyCeiling.toFixed(4)})`}
               </p>
             </div>
           </div>
           <span className="font-mono text-sm font-bold text-[#00944A] tabular-nums whitespace-nowrap">
-            +0.0010 USDT
+            +{config.perAdViewReward.toFixed(4)} USDT
           </span>
         </div>
 
@@ -60,10 +74,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
         <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           <button
             type="button"
+            disabled={adsSlotEmpty}
             onClick={() => onOpenModal('ad_watch')}
-            className="mf-btn-green-3d flex min-h-[46px] items-center justify-center px-4 py-2.5 text-sm font-extrabold sm:col-span-2"
+            className="mf-btn-green-3d flex min-h-[46px] items-center justify-center px-4 py-2.5 text-sm font-extrabold sm:col-span-2 disabled:opacity-50"
           >
-            Verify to Start (Slot #{state.nextSlotNumber})
+            {adsSlotEmpty
+              ? 'Premium Ads Slot Empty'
+              : `Verify to Start (Slot #${Math.min(dailyTotal, state.dailyAdsCompleted + 1)})`}
           </button>
           <button
             type="button"
