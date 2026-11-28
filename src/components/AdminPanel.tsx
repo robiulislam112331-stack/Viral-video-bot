@@ -180,7 +180,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [savingSection, setSavingSection] = useState<string | null>(null);
 
   // Task Management State
-  const [tasks, setTasks] = useState<BonusTaskItem[]>(DEFAULT_EARNMONEY_CONFIG.tasks);
+  const [tasks, setTasks] = useState<BonusTaskItem[]>([]);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
   const [taskType, setTaskType] = useState<TaskType>('Daily');

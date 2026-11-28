@@ -90,19 +90,7 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
     'Bot is under maintenance. New features coming soon. Please try again later.',
   maintenanceAdminId: '',
 
-  tasks: [
-    {
-      id: 'task_verify_app',
-      title: 'Verify App',
-      taskType: 'Daily',
-      badge: 'Daily',
-      rewardUsdt: 0.2,
-      url: 'https://t.me/premiumapps5462',
-      completed: false,
-      active: true,
-      createdBy: 'admin',
-    },
-  ],
+  tasks: [],
   updatedAt: '2026-11-27T00:00:00.000Z',
 };
 

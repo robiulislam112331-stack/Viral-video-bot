@@ -48,6 +48,13 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
   const channel1Handle = deriveTelegramHandle(config.channel1Url, '@Channel1');
   const channel2Handle = deriveTelegramHandle(config.channel2Url, '@Channel2');
+  const pendingWithdrawTotal = (state.withdrawHistory || [])
+    .filter((w) => w.status === 'Pending')
+    .reduce((sum, w) => sum + (Number(w.amountUsdt) || 0), 0);
+  const availableForNewWithdraw = Math.max(
+    0,
+    Number((state.totalBalance - pendingWithdrawTotal).toFixed(4))
+  );
   const meetsMinimum = state.totalBalance >= minWithdraw;
 
   const parsedPreviewAmount = Number.parseFloat(amountInput);
@@ -57,7 +64,9 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
   const handleSetMax = () => {
     const capped =
-      maxWithdraw > 0 ? Math.min(state.totalBalance, maxWithdraw) : state.totalBalance;
+      maxWithdraw > 0
+        ? Math.min(availableForNewWithdraw, maxWithdraw)
+        : availableForNewWithdraw;
     setAmountInput(capped.toFixed(2));
     setFeedback(null);
   };
@@ -91,8 +100,14 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
       return;
     }
 
-    if (numericAmount > state.totalBalance) {
-      setFeedback({ type: 'error', text: 'Requested amount exceeds your available balance.' });
+    if (numericAmount > availableForNewWithdraw) {
+      setFeedback({
+        type: 'error',
+        text:
+          pendingWithdrawTotal > 0
+            ? 'Requested amount exceeds available balance (excluding pending withdrawals).'
+            : 'Requested amount exceeds your available balance.',
+      });
       return;
     }
 

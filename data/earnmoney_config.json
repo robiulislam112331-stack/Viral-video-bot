@@ -26,18 +26,6 @@
   "maintenanceMode": false,
   "maintenanceMessage": "Bot is under maintenance. New features coming soon. Please try again later.",
   "maintenanceAdminId": "",
-  "tasks": [
-    {
-      "id": "task_verify_app",
-      "title": "Verify App",
-      "taskType": "Daily",
-      "badge": "Daily",
-      "rewardUsdt": 0.2,
-      "url": "https://t.me/premiumapps5462",
-      "completed": false,
-      "active": true,
-      "createdBy": "admin"
-    }
-  ],
-  "updatedAt": "2026-11-28T09:49:28.733Z"
+  "tasks": [],
+  "updatedAt": "2026-11-28T10:13:34.334Z"
 }

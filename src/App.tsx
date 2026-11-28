@@ -37,7 +37,9 @@ function loadLocalConfig(): EarnMoneyConfig {
     return {
       ...DEFAULT_EARNMONEY_CONFIG,
       ...parsed,
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : DEFAULT_EARNMONEY_CONFIG.tasks,
+      tasks: Array.isArray(parsed.tasks)
+        ? parsed.tasks.filter((t) => t && t.id !== 'task_verify_app')
+        : [],
     };
   } catch {
     return DEFAULT_EARNMONEY_CONFIG;
@@ -61,7 +63,9 @@ function loadLocalEarnMoneyState(
       userId,
       userName: userName || fallback.userName,
       userAvatar: userAvatar || fallback.userAvatar,
-      bonusTasks: Array.isArray(parsed.bonusTasks) ? parsed.bonusTasks : fallback.bonusTasks,
+      bonusTasks: Array.isArray(parsed.bonusTasks)
+        ? parsed.bonusTasks.filter((t) => t && t.id !== 'task_verify_app')
+        : [],
       referralsList: Array.isArray(parsed.referralsList)
         ? parsed.referralsList
         : fallback.referralsList,
@@ -156,20 +160,14 @@ const EarnMoneyApp: React.FC = () => {
           Number(syncedConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser
         );
         const nextMerged: EarnMoneyState = {
-          ...createInitialEarnMoneyState(
-            tgUser.id,
-            tgUser.name,
-            tgUser.avatarUrl,
-            syncedConfig
-          ),
           ...data.state,
           dailyAdsTotal: dynamicDailyTotal,
           dailyCeilingUsdt: Number(
             (dynamicDailyTotal * (Number(syncedConfig.perAdViewReward) || 0)).toFixed(4)
           ),
-          userId: tgUser.id,
-          userName: tgUser.name,
-          userAvatar: tgUser.avatarUrl,
+          userId: data.state.userId || tgUser.id,
+          userName: tgUser.name || data.state.userName,
+          userAvatar: tgUser.avatarUrl || data.state.userAvatar,
         };
         setState(nextMerged);
         cacheState(nextMerged);
@@ -489,8 +487,18 @@ const EarnMoneyApp: React.FC = () => {
       };
     }
 
-    if (amount > state.totalBalance) {
-      return { ok: false, message: 'Insufficient USDT balance.' };
+    const pendingTotal = (state.withdrawHistory || [])
+      .filter((w) => w.status === 'Pending')
+      .reduce((sum, w) => sum + (Number(w.amountUsdt) || 0), 0);
+    const availableBalance = Math.max(0, Number((state.totalBalance - pendingTotal).toFixed(4)));
+    if (amount > availableBalance) {
+      return {
+        ok: false,
+        message:
+          pendingTotal > 0
+            ? 'Insufficient available USDT balance (pending withdrawals are queued).'
+            : 'Insufficient USDT balance.',
+      };
     }
 
     try {

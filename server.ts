@@ -275,19 +275,7 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
     'Bot is under maintenance. New features coming soon. Please try again later.',
   maintenanceAdminId: '',
 
-  tasks: [
-    {
-      id: 'task_verify_app',
-      title: 'Verify App',
-      taskType: 'Daily',
-      badge: 'Daily',
-      rewardUsdt: 0.2,
-      url: 'https://t.me/premiumapps5462',
-      completed: false,
-      active: true,
-      createdBy: 'admin',
-    },
-  ],
+  tasks: [],
   updatedAt: new Date().toISOString(),
 };
 
@@ -300,21 +288,23 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
     const raw = fs.readFileSync(EARNMONEY_CONFIG_PATH, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<EarnMoneyConfig>;
     const tasks: BonusTaskItem[] = Array.isArray(parsed.tasks)
-      ? parsed.tasks.map((t) => {
-          const taskType: TaskType = normalizeTaskType(t.taskType, t.badge);
-          return {
-            id: String(t.id || `task_${crypto.randomBytes(4).toString('hex')}`),
-            title: String(t.title || 'Task').slice(0, 80),
-            taskType,
-            badge: taskType,
-            rewardUsdt: Number.isFinite(Number(t.rewardUsdt)) ? Number(t.rewardUsdt) : 0.1,
-            url: typeof t.url === 'string' ? t.url : 'https://t.me/waincomesite',
-            completed: false,
-            active: t.active !== false,
-            createdBy: 'admin',
-          };
-        })
-      : structuredClone(DEFAULT_EARNMONEY_CONFIG.tasks);
+      ? parsed.tasks
+          .filter((t) => Boolean(t))
+          .map((t) => {
+            const taskType: TaskType = normalizeTaskType(t.taskType, t.badge);
+            return {
+              id: String(t.id || `task_${crypto.randomBytes(4).toString('hex')}`),
+              title: String(t.title || 'Task').slice(0, 80),
+              taskType,
+              badge: taskType,
+              rewardUsdt: Number.isFinite(Number(t.rewardUsdt)) ? Number(t.rewardUsdt) : 0.1,
+              url: typeof t.url === 'string' ? t.url : 'https://t.me/waincomesite',
+              completed: false,
+              active: t.active !== false,
+              createdBy: 'admin',
+            };
+          })
+      : [];
 
     const numOr = (val: unknown, fallback: number, min = 0) =>
       typeof val === 'number' && Number.isFinite(val) && val >= min ? val : fallback;
@@ -523,12 +513,6 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
   const completedSet = new Set<string>(Array.isArray(user.completedTaskIds) ? user.completedTaskIds : []);
   const taskCompletions: Record<string, number> =
     user.taskCompletions && typeof user.taskCompletions === 'object' ? { ...user.taskCompletions } : {};
-
-  if (Array.isArray(user.bonusTasks)) {
-    for (const t of user.bonusTasks) {
-      if (t.completed) completedSet.add(t.id);
-    }
-  }
 
   const userSnapshot = {
     completedTaskIds: Array.from(completedSet),
@@ -1433,8 +1417,17 @@ async function startServer() {
       });
       return;
     }
-    if (amount > user.totalBalance) {
-      res.status(400).json({ error: 'Insufficient USDT balance.' });
+    const pendingWithdrawTotal = (user.withdrawHistory || [])
+      .filter((w) => w.status === 'Pending')
+      .reduce((sum, w) => sum + (Number(w.amountUsdt) || 0), 0);
+    const availableBalance = Math.max(0, Number((user.totalBalance - pendingWithdrawTotal).toFixed(4)));
+    if (amount > availableBalance) {
+      res.status(400).json({
+        error:
+          pendingWithdrawTotal > 0
+            ? 'Insufficient available USDT balance (pending withdrawals are queued).'
+            : 'Insufficient USDT balance.',
+      });
       return;
     }
     if (!/^0x[a-fA-F0-9]{10,42}$/.test(address)) {
@@ -1454,7 +1447,6 @@ async function startServer() {
       year: 'numeric',
     });
 
-    user.totalBalance = Number((user.totalBalance - amount).toFixed(4));
     user.withdrawHistory = [
       {
         id: `wd_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
@@ -2421,11 +2413,15 @@ async function startServer() {
     }
 
     if (decision === 'approve') {
+      if (user.totalBalance < wd.amountUsdt) {
+        res.status(400).json({ error: 'User balance is lower than withdrawal amount.' });
+        return;
+      }
       wd.status = 'Completed';
+      user.totalBalance = Math.max(0, Number((user.totalBalance - wd.amountUsdt).toFixed(4)));
       user.totalWithdraw = Number((user.totalWithdraw + wd.amountUsdt).toFixed(4));
     } else {
       wd.status = 'Rejected';
-      user.totalBalance = Number((user.totalBalance + wd.amountUsdt).toFixed(4));
     }
 
     earnMoneyUsers[uid] = user;

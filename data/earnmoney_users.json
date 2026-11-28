@@ -20,16 +20,7 @@
     "joinedWaincomesite": false,
     "joinedPremiumApps": false,
     "activateAdsDone": 0,
-    "bonusTasks": [
-      {
-        "id": "task_verify_app",
-        "title": "Verify App",
-        "badge": "Daily",
-        "rewardUsdt": 0.2,
-        "url": "https://t.me/premiumapps5462",
-        "completed": false
-      }
-    ],
+    "bonusTasks": [],
     "referralsList": [],
     "withdrawHistory": []
   }
