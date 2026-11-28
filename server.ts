@@ -412,7 +412,9 @@ function saveEarnMoneyConfig(config: EarnMoneyConfig): void {
 
 let earnMoneyConfig: EarnMoneyConfig = loadEarnMoneyConfig();
 
-type ServerEarnMoneyState = EarnMoneyState;
+type ServerEarnMoneyState = EarnMoneyState & {
+  telegramPhotoFileId?: string;
+};
 
 type EarnMoneyUserMap = Record<string, ServerEarnMoneyState>;
 
@@ -437,10 +439,21 @@ function isActivationRuleMetForUser(user: ServerEarnMoneyState): boolean {
   );
 }
 
+interface TelegramProfileSeed {
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  isTelegramUser?: boolean;
+  joinedAt?: string;
+  lastActiveAt?: string;
+  telegramPhotoFileId?: string;
+}
+
 function createZeroEarnMoneyUser(
   userId: string,
   userName: string,
-  userAvatar: string
+  userAvatar: string,
+  profile: TelegramProfileSeed = {}
 ): ServerEarnMoneyState {
   const dailyTotal = Math.max(1, Number(earnMoneyConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
   const ceiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
@@ -448,11 +461,27 @@ function createZeroEarnMoneyUser(
     earnMoneyConfig.referMinAdsWatched === 0 &&
     earnMoneyConfig.referMinChannelsJoined === 0 &&
     earnMoneyConfig.referMinTasksCompleted === 0;
+  const nowIso = new Date().toISOString();
+  const computedName =
+    [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim() ||
+    userName ||
+    (profile.username ? `@${profile.username}` : `User ${userId}`);
 
   return {
     userId,
-    userName: userName || 'Earn Money User',
-    userAvatar: userAvatar || '/src/assets/images/earnmoney_avatar_1795708537961.jpg',
+    userName: computedName,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    username: profile.username,
+    isTelegramUser: Boolean(profile.isTelegramUser),
+    joinedAt: profile.joinedAt || nowIso,
+    lastActiveAt: profile.lastActiveAt || nowIso,
+    telegramPhotoFileId: profile.telegramPhotoFileId,
+    userAvatar:
+      userAvatar ||
+      (profile.isTelegramUser
+        ? `/api/telegram/avatar/${userId}`
+        : '/src/assets/images/earnmoney_avatar_1795708537961.jpg'),
     isBlocked: false,
     totalBalance: 0,
     referBalance: 0,
@@ -554,9 +583,20 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
   const claimedSlotCount = Object.values(adSlotClaims).filter((r) => r.view_reward_claimed).length;
   const dailyCompleted = Math.min(dailyTotal, Math.max(user.dailyAdsCompleted || 0, claimedSlotCount));
 
+  const resolvedAvatar =
+    user.userAvatar && user.userAvatar.startsWith('https://')
+      ? user.userAvatar
+      : user.telegramPhotoFileId || user.isTelegramUser
+        ? `/api/telegram/avatar/${user.userId}`
+        : user.userAvatar;
+
+  const { telegramPhotoFileId: _hiddenPhotoId, ...publicUser } = user;
+
   const syncedBase: ServerEarnMoneyState = {
-    ...user,
+    ...publicUser,
+    userAvatar: resolvedAvatar,
     isBlocked: Boolean(user.isBlocked),
+    tasksCompletedCount: Array.from(completedSet).length,
     dailyAdsTotal: dailyTotal,
     dailyAdsCompleted: dailyCompleted,
     nextSlotNumber: Math.min(dailyTotal, dailyCompleted + 1),
@@ -573,14 +613,25 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
   return syncedBase;
 }
 
+function isRealTelegramUserRecord(user: ServerEarnMoneyState | undefined): boolean {
+  if (!user || !user.userId) return false;
+  if (user.userName === 'Earn Money User' && !user.isTelegramUser) return false;
+  return Boolean(user.isTelegramUser);
+}
+
 function loadEarnMoneyUsers(): EarnMoneyUserMap {
   if (!fs.existsSync(EARNMONEY_PATH)) return {};
   try {
     const raw = fs.readFileSync(EARNMONEY_PATH, 'utf-8');
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as EarnMoneyUserMap)
-      : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const filtered: EarnMoneyUserMap = {};
+    for (const [k, v] of Object.entries(parsed as EarnMoneyUserMap)) {
+      if (isRealTelegramUserRecord(v)) {
+        filtered[k] = v;
+      }
+    }
+    return filtered;
   } catch {
     return {};
   }
@@ -838,6 +889,90 @@ async function startServer() {
     );
   }
 
+  async function fetchTelegramProfilePhotoFileId(
+    botToken: string,
+    telegramUserId: string
+  ): Promise<string | undefined> {
+    if (!botToken || !/^\d{4,20}$/.test(telegramUserId)) return undefined;
+    const res = await telegramBotApiCall<{
+      total_count?: number;
+      photos?: Array<Array<{ file_id?: string }>>;
+    }>(botToken, 'getUserProfilePhotos', {
+      user_id: Number(telegramUserId),
+      limit: 1,
+    });
+    if (!res.ok || !res.result?.photos?.length) return undefined;
+    const sizes = res.result.photos[0];
+    if (!Array.isArray(sizes) || sizes.length === 0) return undefined;
+    const chosen = sizes[sizes.length - 1] || sizes[0];
+    return typeof chosen?.file_id === 'string' && chosen.file_id ? chosen.file_id : undefined;
+  }
+
+  app.get('/api/telegram/avatar/:uid', async (req, res) => {
+    const uid = String(req.params.uid || '').replace(/[^0-9]/g, '').slice(0, 20);
+    if (!/^\d{4,20}$/.test(uid)) {
+      res.status(404).end();
+      return;
+    }
+
+    const user = earnMoneyUsers[uid];
+    if (user?.userAvatar && user.userAvatar.startsWith('https://')) {
+      try {
+        const parsed = new URL(user.userAvatar);
+        if (parsed.hostname === 't.me' || parsed.hostname.endsWith('.t.me') || parsed.hostname.endsWith('.telegram.org')) {
+          res.redirect(parsed.toString());
+          return;
+        }
+      } catch {
+        // fall through to Bot API lookup
+      }
+    }
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
+    if (!botToken) {
+      res.status(404).end();
+      return;
+    }
+
+    try {
+      let fileId = user?.telegramPhotoFileId;
+      if (!fileId) {
+        fileId = await fetchTelegramProfilePhotoFileId(botToken, uid);
+        if (fileId && user) {
+          user.telegramPhotoFileId = fileId;
+          saveEarnMoneyUsers(earnMoneyUsers);
+        }
+      }
+      if (!fileId) {
+        res.status(404).end();
+        return;
+      }
+
+      const fileInfo = await telegramBotApiCall<{ file_path?: string }>(botToken, 'getFile', {
+        file_id: fileId,
+      });
+      const filePath = fileInfo.result?.file_path;
+      if (!fileInfo.ok || !filePath || filePath.includes('..')) {
+        res.status(404).end();
+        return;
+      }
+
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath.replace(/^\/+/, '')}`;
+      const imgRes = await fetch(fileUrl);
+      if (!imgRes.ok) {
+        res.status(404).end();
+        return;
+      }
+      const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=1800');
+      res.send(buf);
+    } catch {
+      res.status(404).end();
+    }
+  });
+
   async function evaluateForceJoinMembership(
     uid: string,
     isTelegramUser: boolean
@@ -849,11 +984,12 @@ async function startServer() {
     message: string | null;
     liveChecked: boolean;
   }> {
-    if (!earnMoneyUsers[uid]) {
+    if (!earnMoneyUsers[uid] && isTelegramUser) {
       earnMoneyUsers[uid] = createZeroEarnMoneyUser(
         uid,
-        'Earn Money User',
-        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+        `User ${uid}`,
+        `/api/telegram/avatar/${uid}`,
+        { isTelegramUser: true }
       );
       saveEarnMoneyUsers(earnMoneyUsers);
     }
@@ -862,10 +998,10 @@ async function startServer() {
     const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || '';
     const canLiveCheck = Boolean(botToken) && isTelegramUser && /^\d{4,20}$/.test(uid);
 
-    let joinedWaincomesite = Boolean(userRecord.joinedWaincomesite);
-    let joinedPremiumApps = Boolean(userRecord.joinedPremiumApps);
+    let joinedWaincomesite = Boolean(userRecord?.joinedWaincomesite);
+    let joinedPremiumApps = Boolean(userRecord?.joinedPremiumApps);
 
-    if (canLiveCheck) {
+    if (canLiveCheck && userRecord) {
       const [wJoined, pJoined] = await Promise.all([
         checkLiveTelegramChannelMember(botToken, '@waincomesite', uid),
         checkLiveTelegramChannelMember(botToken, '@premiumapps5462', uid),
@@ -874,6 +1010,7 @@ async function startServer() {
       joinedPremiumApps = pJoined;
       userRecord.joinedWaincomesite = wJoined;
       userRecord.joinedPremiumApps = pJoined;
+      userRecord.lastActiveAt = new Date().toISOString();
       saveEarnMoneyUsers(earnMoneyUsers);
     }
 
@@ -997,26 +1134,92 @@ async function startServer() {
       return;
     }
 
-    const name =
+    const isTg = req.query?.isTg === '1';
+    const firstName =
+      typeof req.query?.firstName === 'string' && req.query.firstName.trim()
+        ? req.query.firstName.trim().slice(0, 80)
+        : undefined;
+    const lastName =
+      typeof req.query?.lastName === 'string' && req.query.lastName.trim()
+        ? req.query.lastName.trim().slice(0, 80)
+        : undefined;
+    const username =
+      typeof req.query?.username === 'string' && req.query.username.trim()
+        ? req.query.username.trim().replace(/^@+/, '').slice(0, 64)
+        : undefined;
+    const rawName =
       typeof req.query?.name === 'string' && req.query.name.trim()
         ? req.query.name.trim().slice(0, 80)
-        : 'Earn Money User';
+        : '';
+    const name =
+      [firstName, lastName].filter(Boolean).join(' ').trim() ||
+      (rawName && rawName !== 'Earn Money User' && rawName !== 'Preview Guest' ? rawName : '') ||
+      (username ? `@${username}` : `User ${uid}`);
     const avatar =
       typeof req.query?.avatar === 'string' && isSafeUrl(req.query.avatar, false)
         ? req.query.avatar.trim()
-        : '/src/assets/images/earnmoney_avatar_1795708537961.jpg';
+        : isTg
+          ? `/api/telegram/avatar/${uid}`
+          : '/src/assets/images/earnmoney_avatar_1795708537961.jpg';
     const rawRef = typeof req.query?.ref === 'string' ? req.query.ref.trim() : '';
     const refUid = rawRef.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
 
-    if (!earnMoneyUsers[uid]) {
-      earnMoneyUsers[uid] = createZeroEarnMoneyUser(uid, name, avatar);
-      applyReferralAttribution(uid, name, refUid);
+    const nowIso = new Date().toISOString();
+
+    if (earnMoneyUsers[uid]) {
+      const existing = earnMoneyUsers[uid];
+      existing.lastActiveAt = nowIso;
+      if (isTg) {
+        existing.isTelegramUser = true;
+        if (firstName !== undefined) existing.firstName = firstName;
+        if (lastName !== undefined) existing.lastName = lastName;
+        if (username !== undefined) existing.username = username;
+        if (name && name !== 'Earn Money User' && name !== 'Preview Guest') {
+          existing.userName = name;
+        }
+        if (avatar.startsWith('https://')) {
+          existing.userAvatar = avatar;
+        }
+      }
       saveEarnMoneyUsers(earnMoneyUsers);
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        state: syncUserWithConfig(existing),
+        config: earnMoneyConfig,
+        isMaintenanceAdmin: isMaintenanceAdmin(uid),
+      });
+      return;
     }
 
+    if (isTg) {
+      earnMoneyUsers[uid] = createZeroEarnMoneyUser(uid, name, avatar, {
+        firstName,
+        lastName,
+        username,
+        isTelegramUser: true,
+        joinedAt: nowIso,
+        lastActiveAt: nowIso,
+      });
+      applyReferralAttribution(uid, name, refUid);
+      saveEarnMoneyUsers(earnMoneyUsers);
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({
+        state: syncUserWithConfig(earnMoneyUsers[uid]),
+        config: earnMoneyConfig,
+        isMaintenanceAdmin: isMaintenanceAdmin(uid),
+      });
+      return;
+    }
+
+    // Plain browser preview outside Telegram: return transient preview state without inserting a fake DB user
+    const previewState = createZeroEarnMoneyUser(uid, 'Preview Guest', avatar, {
+      isTelegramUser: false,
+    });
     res.setHeader('Cache-Control', 'no-store');
     res.json({
-      state: syncUserWithConfig(earnMoneyUsers[uid]),
+      state: syncUserWithConfig(previewState),
       config: earnMoneyConfig,
       isMaintenanceAdmin: isMaintenanceAdmin(uid),
     });
@@ -1042,14 +1245,21 @@ async function startServer() {
       return;
     }
 
+    const existing = earnMoneyUsers[uid];
+    if (!existing && !incoming.isTelegramUser) {
+      res.json({ ok: true, state: syncUserWithConfig(createZeroEarnMoneyUser(uid, 'Preview Guest', '')) });
+      return;
+    }
+
     const base =
-      earnMoneyUsers[uid] ??
+      existing ??
       createZeroEarnMoneyUser(
         uid,
-        typeof incoming.userName === 'string' ? incoming.userName.slice(0, 80) : 'Earn Money User',
+        typeof incoming.userName === 'string' ? incoming.userName.slice(0, 80) : `User ${uid}`,
         typeof incoming.userAvatar === 'string' && isSafeUrl(incoming.userAvatar, false)
           ? incoming.userAvatar
-          : '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+          : `/api/telegram/avatar/${uid}`,
+        { isTelegramUser: true }
       );
 
     if (base.isBlocked) {
@@ -1059,14 +1269,7 @@ async function startServer() {
 
     earnMoneyUsers[uid] = {
       ...base,
-      userName:
-        typeof incoming.userName === 'string' && incoming.userName.trim()
-          ? incoming.userName.trim().slice(0, 80)
-          : base.userName,
-      userAvatar:
-        typeof incoming.userAvatar === 'string' && isSafeUrl(incoming.userAvatar, false)
-          ? incoming.userAvatar
-          : base.userAvatar,
+      lastActiveAt: new Date().toISOString(),
       joinedWaincomesite: Boolean(incoming.joinedWaincomesite ?? base.joinedWaincomesite),
       joinedPremiumApps: Boolean(incoming.joinedPremiumApps ?? base.joinedPremiumApps),
       userId: uid,
@@ -1080,6 +1283,7 @@ async function startServer() {
     const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
     const mode = req.body?.mode === 'click' ? 'click' : 'view';
+    const isTg = Boolean(req.body?.isTg);
     if (!uid) {
       res.status(400).json({ error: 'Valid uid is required.' });
       return;
@@ -1092,14 +1296,19 @@ async function startServer() {
       return;
     }
 
-    const user =
-      earnMoneyUsers[uid] ??
-      createZeroEarnMoneyUser(
-        uid,
-        'Earn Money User',
-        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
-      );
-    if (user.isBlocked) {
+    const user = earnMoneyUsers[uid];
+    if (!user) {
+      if (!isTg) {
+        res.status(400).json({ error: 'Please press /start in @moneyxearnbot to activate your account.' });
+        return;
+      }
+      earnMoneyUsers[uid] = createZeroEarnMoneyUser(uid, `User ${uid}`, `/api/telegram/avatar/${uid}`, {
+        isTelegramUser: true,
+      });
+    }
+    const activeUser = earnMoneyUsers[uid];
+    activeUser.lastActiveAt = new Date().toISOString();
+    if (activeUser.isBlocked) {
       res.status(403).json({ error: 'Your account has been blocked by admin.' });
       return;
     }
@@ -1110,7 +1319,7 @@ async function startServer() {
 
     const dailyLimit = Math.max(1, Number(earnMoneyConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
     const requestedSlotRaw = Number(req.body?.slotId);
-    const defaultNextSlot = Math.min(dailyLimit, (user.dailyAdsCompleted || 0) + 1);
+    const defaultNextSlot = Math.min(dailyLimit, (activeUser.dailyAdsCompleted || 0) + 1);
     const slotId =
       Number.isInteger(requestedSlotRaw) && requestedSlotRaw >= 1 && requestedSlotRaw <= dailyLimit
         ? requestedSlotRaw
@@ -1134,19 +1343,19 @@ async function startServer() {
       if (slotRecord.view_reward_claimed) {
         res.status(400).json({
           error: `View reward already claimed for Slot #${slotId}.`,
-          state: syncUserWithConfig(user),
+          state: syncUserWithConfig(activeUser),
           config: earnMoneyConfig,
         });
         return;
       }
-      if (user.dailyAdsCompleted >= dailyLimit) {
+      if (activeUser.dailyAdsCompleted >= dailyLimit) {
         res.status(400).json({ error: `Daily ${dailyLimit} ad slots already completed.` });
         return;
       }
     } else if (slotRecord.click_bonus_claimed) {
       res.status(400).json({
         error: `Ad click bonus already claimed for Slot #${slotId}.`,
-        state: syncUserWithConfig(user),
+        state: syncUserWithConfig(activeUser),
         config: earnMoneyConfig,
       });
       return;
@@ -1169,25 +1378,25 @@ async function startServer() {
 
     if (mode === 'view') {
       slotRecord.view_reward_claimed = true;
-      user.dailyAdsCompleted = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
-      user.dailyAdsTotal = dailyLimit;
-      user.nextSlotNumber = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
-      user.adsWatchedTotal += 1;
-      user.activateAdsDone = user.adsWatchedTotal;
+      activeUser.dailyAdsCompleted = Math.min(dailyLimit, activeUser.dailyAdsCompleted + 1);
+      activeUser.dailyAdsTotal = dailyLimit;
+      activeUser.nextSlotNumber = Math.min(dailyLimit, activeUser.dailyAdsCompleted + 1);
+      activeUser.adsWatchedTotal += 1;
+      activeUser.activateAdsDone = activeUser.adsWatchedTotal;
     } else {
       slotRecord.click_bonus_claimed = true;
     }
     slotRecord.updated_at = new Date().toISOString();
     saveAdSlotClaims(adSlotClaimsList);
 
-    user.totalBalance = Number((user.totalBalance + reward).toFixed(4));
-    user.totalIncome = Number((user.totalIncome + reward).toFixed(4));
+    activeUser.totalBalance = Number((activeUser.totalBalance + reward).toFixed(4));
+    activeUser.totalIncome = Number((activeUser.totalIncome + reward).toFixed(4));
 
-    evaluateReferralProgressAndCredit(user);
-    earnMoneyUsers[uid] = user;
+    evaluateReferralProgressAndCredit(activeUser);
+    earnMoneyUsers[uid] = activeUser;
     saveEarnMoneyUsers(earnMoneyUsers);
     res.json({
-      state: syncUserWithConfig(user),
+      state: syncUserWithConfig(activeUser),
       config: earnMoneyConfig,
       reward,
       slotClaim: slotRecord,
@@ -1210,13 +1419,19 @@ async function startServer() {
       return;
     }
 
-    const user =
-      earnMoneyUsers[uid] ??
-      createZeroEarnMoneyUser(
-        uid,
-        'Earn Money User',
-        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
-      );
+    const isTg = Boolean(req.body?.isTg);
+    let user = earnMoneyUsers[uid];
+    if (!user) {
+      if (!isTg) {
+        res.status(400).json({ error: 'Please press /start in @moneyxearnbot to activate your account.' });
+        return;
+      }
+      user = createZeroEarnMoneyUser(uid, `User ${uid}`, `/api/telegram/avatar/${uid}`, {
+        isTelegramUser: true,
+      });
+      earnMoneyUsers[uid] = user;
+    }
+    user.lastActiveAt = new Date().toISOString();
     if (user.isBlocked) {
       res.status(403).json({ error: 'Your account has been blocked by admin.' });
       return;
@@ -1297,13 +1512,19 @@ async function startServer() {
       return;
     }
 
-    const user =
-      earnMoneyUsers[uid] ??
-      createZeroEarnMoneyUser(
-        uid,
-        'Earn Money User',
-        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
-      );
+    const isTg = Boolean(req.body?.isTg);
+    let user = earnMoneyUsers[uid];
+    if (!user) {
+      if (!isTg) {
+        res.status(400).json({ error: 'Please press /start in @moneyxearnbot to activate your account.' });
+        return;
+      }
+      user = createZeroEarnMoneyUser(uid, `User ${uid}`, `/api/telegram/avatar/${uid}`, {
+        isTelegramUser: true,
+      });
+      earnMoneyUsers[uid] = user;
+    }
+    user.lastActiveAt = new Date().toISOString();
     if (user.isBlocked) {
       res.status(403).json({ error: 'Your account has been blocked by admin.' });
       return;
@@ -1490,14 +1711,25 @@ async function startServer() {
       return;
     }
 
+    const isTg = Boolean(req.body?.isTg);
     if (!earnMoneyUsers[uid]) {
+      if (!isTg) {
+        res.json({
+          ok: true,
+          joinedWaincomesite: channel === 'waincomesite',
+          joinedPremiumApps: channel === 'premiumapps',
+        });
+        return;
+      }
       earnMoneyUsers[uid] = createZeroEarnMoneyUser(
         uid,
-        'Earn Money User',
-        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+        `User ${uid}`,
+        `/api/telegram/avatar/${uid}`,
+        { isTelegramUser: true }
       );
     }
 
+    earnMoneyUsers[uid].lastActiveAt = new Date().toISOString();
     if (channel === 'waincomesite') {
       earnMoneyUsers[uid].joinedWaincomesite = true;
     } else {
@@ -1556,10 +1788,12 @@ async function startServer() {
       const text = update.message.text.trim();
       const chatId = update.message.chat.id;
       const uid = String(update.message.from.id).replace(/[^0-9]/g, '');
+      const firstName = update.message.from.first_name?.trim() || undefined;
+      const lastName = update.message.from.last_name?.trim() || undefined;
+      const username = update.message.from.username?.trim().replace(/^@+/, '') || undefined;
       const fullName =
-        [update.message.from.first_name, update.message.from.last_name].filter(Boolean).join(' ') ||
-        update.message.from.username ||
-        'Earn Money User';
+        [firstName, lastName].filter(Boolean).join(' ').trim() ||
+        (username ? `@${username}` : `User ${uid}`);
 
       if (text.startsWith('/start')) {
         if (isMaintenanceBlockedForUser(uid)) {
@@ -1574,14 +1808,39 @@ async function startServer() {
 
         const refMatch = text.match(/ref_([a-zA-Z0-9_-]{4,64})/);
         const refUid = refMatch ? refMatch[1] : '';
+        const nowIso = new Date().toISOString();
+        const photoFileId = botToken
+          ? await fetchTelegramProfilePhotoFileId(botToken, uid).catch(() => undefined)
+          : undefined;
+        const avatarPath = photoFileId ? `/api/telegram/avatar/${uid}` : '';
 
         if (uid && !earnMoneyUsers[uid]) {
-          earnMoneyUsers[uid] = createZeroEarnMoneyUser(
-            uid,
-            fullName,
-            '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
-          );
+          earnMoneyUsers[uid] = createZeroEarnMoneyUser(uid, fullName, avatarPath, {
+            firstName,
+            lastName,
+            username,
+            isTelegramUser: true,
+            joinedAt: nowIso,
+            lastActiveAt: nowIso,
+            telegramPhotoFileId: photoFileId,
+          });
           applyReferralAttribution(uid, fullName, refUid);
+          saveEarnMoneyUsers(earnMoneyUsers);
+        } else if (uid && earnMoneyUsers[uid]) {
+          const existing = earnMoneyUsers[uid];
+          existing.isTelegramUser = true;
+          if (firstName !== undefined) existing.firstName = firstName;
+          if (lastName !== undefined) existing.lastName = lastName;
+          if (username !== undefined) existing.username = username;
+          existing.userName = fullName;
+          existing.lastActiveAt = nowIso;
+          if (!existing.joinedAt) existing.joinedAt = nowIso;
+          if (photoFileId) {
+            existing.telegramPhotoFileId = photoFileId;
+            if (!existing.userAvatar || !existing.userAvatar.startsWith('https://')) {
+              existing.userAvatar = `/api/telegram/avatar/${uid}`;
+            }
+          }
           saveEarnMoneyUsers(earnMoneyUsers);
         }
 
@@ -1605,7 +1864,49 @@ async function startServer() {
 
     if (update?.callback_query?.id && update.callback_query.data === 'verify_membership') {
       const chatId = update.callback_query.message?.chat?.id;
-      const cbUid = String(update.callback_query.from?.id ?? '').replace(/[^0-9]/g, '');
+      const cbFrom = update.callback_query.from;
+      const cbUid = String(cbFrom?.id ?? '').replace(/[^0-9]/g, '');
+
+      if (cbUid) {
+        const nowIso = new Date().toISOString();
+        const firstName = cbFrom?.first_name?.trim() || undefined;
+        const lastName = cbFrom?.last_name?.trim() || undefined;
+        const username = cbFrom?.username?.trim().replace(/^@+/, '') || undefined;
+        const fullName =
+          [firstName, lastName].filter(Boolean).join(' ').trim() ||
+          (username ? `@${username}` : `User ${cbUid}`);
+        const photoFileId =
+          botToken && !earnMoneyUsers[cbUid]?.telegramPhotoFileId
+            ? await fetchTelegramProfilePhotoFileId(botToken, cbUid).catch(() => undefined)
+            : earnMoneyUsers[cbUid]?.telegramPhotoFileId;
+
+        if (!earnMoneyUsers[cbUid]) {
+          earnMoneyUsers[cbUid] = createZeroEarnMoneyUser(
+            cbUid,
+            fullName,
+            photoFileId ? `/api/telegram/avatar/${cbUid}` : '',
+            {
+              firstName,
+              lastName,
+              username,
+              isTelegramUser: true,
+              joinedAt: nowIso,
+              lastActiveAt: nowIso,
+              telegramPhotoFileId: photoFileId,
+            }
+          );
+        } else {
+          const existing = earnMoneyUsers[cbUid];
+          existing.isTelegramUser = true;
+          if (firstName !== undefined) existing.firstName = firstName;
+          if (lastName !== undefined) existing.lastName = lastName;
+          if (username !== undefined) existing.username = username;
+          existing.userName = fullName;
+          existing.lastActiveAt = nowIso;
+          if (photoFileId) existing.telegramPhotoFileId = photoFileId;
+        }
+        saveEarnMoneyUsers(earnMoneyUsers);
+      }
 
       if (botToken) {
         if (isMaintenanceBlockedForUser(cbUid)) {
@@ -1972,7 +2273,14 @@ async function startServer() {
   // --- Protected /admin Earn Money Management Routes ---
 
   function buildEarnMoneyAdminOverview() {
-    const usersList = Object.values(earnMoneyUsers).map((u) => syncUserWithConfig(u));
+    const usersList = Object.values(earnMoneyUsers)
+      .filter(isRealTelegramUserRecord)
+      .sort((a, b) => {
+        const ta = new Date(a.lastActiveAt || a.joinedAt || 0).getTime();
+        const tb = new Date(b.lastActiveAt || b.joinedAt || 0).getTime();
+        return tb - ta;
+      })
+      .map((u) => syncUserWithConfig(u));
     const withdrawals: AdminWithdrawalRecord[] = [];
     for (const user of usersList) {
       for (const wd of user.withdrawHistory || []) {
@@ -2337,11 +2645,26 @@ async function startServer() {
   app.get('/api/admin/earnmoney/users', requireAdmin, (req, res) => {
     const q = typeof req.query?.q === 'string' ? req.query.q.trim().toLowerCase() : '';
     const usersList = Object.values(earnMoneyUsers)
+      .filter(isRealTelegramUserRecord)
       .filter((u) => {
         if (!q) return true;
-        return u.userId.toLowerCase().includes(q) || u.userName.toLowerCase().includes(q);
+        const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ').toLowerCase();
+        const uname = (u.username || '').toLowerCase();
+        return (
+          u.userId.toLowerCase().includes(q) ||
+          u.userName.toLowerCase().includes(q) ||
+          fullName.includes(q) ||
+          uname.includes(q) ||
+          (uname && `@${uname}`.includes(q))
+        );
+      })
+      .sort((a, b) => {
+        const ta = new Date(a.lastActiveAt || a.joinedAt || 0).getTime();
+        const tb = new Date(b.lastActiveAt || b.joinedAt || 0).getTime();
+        return tb - ta;
       })
       .map((u) => syncUserWithConfig(u));
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ users: usersList });
   });
 

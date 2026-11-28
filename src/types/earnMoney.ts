@@ -103,6 +103,13 @@ export interface AdminWithdrawalRecord extends WithdrawalItem {
 export interface EarnMoneyState {
   userId: string;
   userName: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  isTelegramUser?: boolean;
+  joinedAt?: string;
+  lastActiveAt?: string;
+  tasksCompletedCount?: number;
   userAvatar: string;
   isBlocked?: boolean;
   referredBy?: string;

@@ -2,11 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Ban,
+  Calendar,
   Check,
   CheckCircle2,
   ClipboardList,
+  Clock,
   Coins,
   Edit3,
+  Eye,
   LayoutDashboard,
   Loader2,
   Lock,
@@ -78,6 +81,34 @@ function broadcastLiveConfig(config: EarnMoneyConfig): void {
   } catch {
     // ignore storage quota errors
   }
+}
+
+function formatDateTime(iso?: string): string {
+  if (!iso) return 'N/A';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function getRealDisplayName(user: EarnMoneyState): string {
+  const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+  if (full) return full;
+  if (user.userName && user.userName !== 'Earn Money User') return user.userName;
+  if (user.username) return `@${user.username.replace(/^@+/, '')}`;
+  return `User ${user.userId}`;
+}
+
+function getInitials(name: string): string {
+  const parts = name.replace(/^@/, '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'TG';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminToken }) => {
@@ -194,6 +225,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [balanceInputs, setBalanceInputs] = useState<Record<string, string>>({});
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [selectedUserForDetails, setSelectedUserForDetails] = useState<EarnMoneyState | null>(null);
+  const [brokenAvatars, setBrokenAvatars] = useState<Record<string, boolean>>({});
 
   // Withdraw Management State
   const [wdFilter, setWdFilter] = useState<'all' | 'Pending' | 'Completed' | 'Rejected'>('all');
@@ -571,9 +604,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const filteredUsers = useMemo(() => {
     const q = userSearchQuery.trim().toLowerCase();
     if (!q) return users;
-    return users.filter(
-      (u) => u.userId.toLowerCase().includes(q) || u.userName.toLowerCase().includes(q)
-    );
+    return users.filter((u) => {
+      const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ').toLowerCase();
+      const uname = (u.username || '').replace(/^@+/, '').toLowerCase();
+      return (
+        u.userId.toLowerCase().includes(q) ||
+        u.userName.toLowerCase().includes(q) ||
+        fullName.includes(q) ||
+        uname.includes(q) ||
+        (uname && `@${uname}`.includes(q))
+      );
+    });
   }, [userSearchQuery, users]);
 
   const handleAdjustBalance = async (uid: string, action: 'add' | 'cut') => {
@@ -601,6 +642,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
       setUsers((prev) => prev.map((u) => (u.userId === uid ? data.user! : u)));
+      setSelectedUserForDetails((prev) => (prev?.userId === uid ? data.user! : prev));
       showToast(
         'ok',
         `${action === 'add' ? 'Added' : 'Deducted'} ${amount.toFixed(2)} USDT for user ${uid}.`
@@ -635,6 +677,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         return;
       }
       setUsers((prev) => prev.map((u) => (u.userId === user.userId ? data.user! : u)));
+      setSelectedUserForDetails((prev) => (prev?.userId === user.userId ? data.user! : prev));
       showToast('ok', `User ${user.userId} ${nextBlocked ? 'blocked' : 'unblocked'}.`);
       void fetchOverview();
     } catch {
@@ -2287,73 +2330,129 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   type="text"
                   value={userSearchQuery}
                   onChange={(e) => setUserSearchQuery(e.target.value)}
-                  placeholder="Search User by ID or Name..."
+                  placeholder="Search by Name, @username, or Telegram ID..."
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
                 />
               </div>
               <div className="text-xs font-semibold text-zinc-400">
-                Showing <span className="text-white font-bold">{filteredUsers.length}</span> of{' '}
-                {users.length} users
+                Real Telegram Users: <span className="text-white font-bold">{filteredUsers.length}</span> of{' '}
+                {users.length}
               </div>
             </div>
 
             {filteredUsers.length === 0 ? (
-              <div className="rounded-2xl border border-zinc-800 bg-[#0E1512] p-10 text-center text-sm text-zinc-500">
-                No matching users found in database yet.
+              <div className="rounded-2xl border border-zinc-800 bg-[#0E1512] p-10 text-center text-sm text-zinc-400">
+                {users.length === 0
+                  ? 'No real Telegram users yet. Users appear here automatically once they press /start in the bot.'
+                  : 'No real users match your search query.'}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredUsers.map((user) => {
                   const isBusy = busyUserId === user.userId;
                   const amtInput = balanceInputs[user.userId] ?? '1.00';
+                  const displayName = getRealDisplayName(user);
+                  const cleanUsername = user.username ? `@${user.username.replace(/^@+/, '')}` : null;
+                  const tasksCount = user.tasksCompletedCount ?? user.completedTaskIds?.length ?? 0;
+                  const avatarSrc =
+                    user.userAvatar && !brokenAvatars[user.userId] ? user.userAvatar : '';
+
                   return (
                     <div
                       key={user.userId}
-                      className={`rounded-2xl border p-4 space-y-4 ${
+                      className={`rounded-2xl border p-4 space-y-3.5 ${
                         user.isBlocked
                           ? 'border-red-500/40 bg-red-950/10'
                           : 'border-zinc-800/90 bg-[#0E1512]'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-display text-base font-bold text-white truncate">
-                              {user.userName}
-                            </p>
-                            {user.isBlocked && (
-                              <span className="px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 text-[10px] font-bold">
-                                BLOCKED
+                        <div className="flex items-center gap-3 min-w-0">
+                          {avatarSrc ? (
+                            <img
+                              src={avatarSrc}
+                              alt={displayName}
+                              onError={() =>
+                                setBrokenAvatars((prev) => ({ ...prev, [user.userId]: true }))
+                              }
+                              className="w-12 h-12 rounded-full object-cover border border-emerald-500/30 bg-[#070B09] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-display text-sm font-extrabold flex items-center justify-center shrink-0">
+                              {getInitials(displayName)}
+                            </div>
+                          )}
+
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-display text-base font-bold text-white truncate">
+                                {displayName}
+                              </p>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  user.isBlocked
+                                    ? 'bg-red-500/20 text-red-300'
+                                    : 'bg-emerald-500/15 text-emerald-300'
+                                }`}
+                              >
+                                {user.isBlocked ? 'Blocked' : 'Active'}
                               </span>
-                            )}
+                            </div>
+                            <p className="text-xs font-semibold text-zinc-300 truncate mt-0.5">
+                              {cleanUsername ? (
+                                <span className="text-emerald-300">{cleanUsername}</span>
+                              ) : (
+                                <span className="text-zinc-500">No Username</span>
+                              )}
+                              <span className="text-zinc-600 mx-1.5">&middot;</span>
+                              <span className="font-mono text-zinc-400">ID: {user.userId}</span>
+                            </p>
                           </div>
-                          <p className="font-mono text-xs text-zinc-400 mt-0.5">
-                            ID: {user.userId}
-                          </p>
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => void handleToggleBlockUser(user)}
-                          className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 shrink-0 ${
-                            user.isBlocked
-                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
-                              : 'bg-red-500/10 border-red-500/30 text-red-300 hover:bg-red-500/20'
-                          }`}
-                        >
-                          {user.isBlocked ? (
-                            <>
-                              <UserCheck className="w-3.5 h-3.5" />
-                              <span>Unblock</span>
-                            </>
-                          ) : (
-                            <>
-                              <Ban className="w-3.5 h-3.5" />
-                              <span>Block</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedUserForDetails(user)}
+                            className="px-2.5 py-2 rounded-xl bg-zinc-900 border border-zinc-700 hover:border-zinc-500 text-xs font-bold text-zinc-200 flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Details</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleToggleBlockUser(user)}
+                            className={`px-2.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1 ${
+                              user.isBlocked
+                                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'bg-red-500/10 border-red-500/30 text-red-300 hover:bg-red-500/20'
+                            }`}
+                          >
+                            {user.isBlocked ? (
+                              <>
+                                <UserCheck className="w-3.5 h-3.5" />
+                                <span>Unblock</span>
+                              </>
+                            ) : (
+                              <>
+                                <Ban className="w-3.5 h-3.5" />
+                                <span>Block</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-400">
+                        <div className="flex items-center gap-1.5 rounded-lg bg-[#070B09] border border-zinc-800/70 px-2.5 py-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          <span className="truncate">Joined: {formatDateTime(user.joinedAt)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 rounded-lg bg-[#070B09] border border-zinc-800/70 px-2.5 py-1.5">
+                          <Clock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          <span className="truncate">Active: {formatDateTime(user.lastActiveAt)}</span>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#070B09] border border-zinc-800/80 p-3 text-xs">
@@ -2366,14 +2465,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                         <div>
                           <p className="text-[10px] text-zinc-500">Total Income</p>
                           <p className="font-mono font-bold text-white tabular-nums">
-                            {user.totalIncome.toFixed(2)}
+                            {user.totalIncome.toFixed(2)} USDT
                           </p>
                         </div>
                         <div>
-                          <p className="text-[10px] text-zinc-500">Withdrawn</p>
+                          <p className="text-[10px] text-zinc-500">Total Withdrawn</p>
                           <p className="font-mono font-bold text-zinc-300 tabular-nums">
-                            {user.totalWithdraw.toFixed(2)}
+                            {user.totalWithdraw.toFixed(2)} USDT
                           </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#070B09] border border-zinc-800/80 px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-zinc-400">Ads Watched</span>
+                          <span className="font-mono font-bold text-white tabular-nums">
+                            {user.dailyAdsCompleted} today / {user.adsWatchedTotal} total
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-zinc-400">Tasks Done</span>
+                          <span className="font-mono font-bold text-emerald-300 tabular-nums">
+                            {tasksCount}
+                          </span>
                         </div>
                       </div>
 
@@ -2534,6 +2648,217 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           </section>
         )}
       </main>
+
+      {selectedUserForDetails && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Telegram User Details"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-[#0E1512] p-5 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {selectedUserForDetails.userAvatar &&
+                !brokenAvatars[selectedUserForDetails.userId] ? (
+                  <img
+                    src={selectedUserForDetails.userAvatar}
+                    alt={getRealDisplayName(selectedUserForDetails)}
+                    onError={() =>
+                      setBrokenAvatars((prev) => ({
+                        ...prev,
+                        [selectedUserForDetails.userId]: true,
+                      }))
+                    }
+                    className="w-14 h-14 rounded-full object-cover border border-emerald-500/35 bg-[#070B09] shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-display text-base font-extrabold flex items-center justify-center shrink-0">
+                    {getInitials(getRealDisplayName(selectedUserForDetails))}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-display text-lg font-extrabold text-white truncate">
+                      {getRealDisplayName(selectedUserForDetails)}
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        selectedUserForDetails.isBlocked
+                          ? 'bg-red-500/20 text-red-300'
+                          : 'bg-emerald-500/15 text-emerald-300'
+                      }`}
+                    >
+                      {selectedUserForDetails.isBlocked ? 'Blocked' : 'Active'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                    {selectedUserForDetails.username
+                      ? `@${selectedUserForDetails.username.replace(/^@+/, '')}`
+                      : 'No Username'}{' '}
+                    &middot; ID: {selectedUserForDetails.userId}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedUserForDetails(null)}
+                className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-white"
+                aria-label="Close details"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">First Name / Last Name</p>
+                <p className="font-semibold text-white mt-0.5">
+                  {selectedUserForDetails.firstName || '—'} /{' '}
+                  {selectedUserForDetails.lastName || '—'}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Telegram Username</p>
+                <p className="font-semibold text-emerald-300 mt-0.5">
+                  {selectedUserForDetails.username
+                    ? `@${selectedUserForDetails.username.replace(/^@+/, '')}`
+                    : 'No Username'}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Join Date &amp; Time</p>
+                <p className="font-semibold text-zinc-200 mt-0.5">
+                  {formatDateTime(selectedUserForDetails.joinedAt)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Last Active</p>
+                <p className="font-semibold text-zinc-200 mt-0.5">
+                  {formatDateTime(selectedUserForDetails.lastActiveAt)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5 text-xs">
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Balance</p>
+                <p className="font-mono font-bold text-emerald-400 mt-0.5">
+                  {selectedUserForDetails.totalBalance.toFixed(4)} USDT
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Total Income</p>
+                <p className="font-mono font-bold text-white mt-0.5">
+                  {selectedUserForDetails.totalIncome.toFixed(4)} USDT
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3">
+                <p className="text-[10px] text-zinc-500">Total Withdrawn</p>
+                <p className="font-mono font-bold text-zinc-300 mt-0.5">
+                  {selectedUserForDetails.totalWithdraw.toFixed(4)} USDT
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-2.5">
+                <p className="text-[10px] text-zinc-500">Ads Today</p>
+                <p className="font-mono font-bold text-white mt-0.5">
+                  {selectedUserForDetails.dailyAdsCompleted} / {selectedUserForDetails.dailyAdsTotal}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-2.5">
+                <p className="text-[10px] text-zinc-500">Total Ads</p>
+                <p className="font-mono font-bold text-white mt-0.5">
+                  {selectedUserForDetails.adsWatchedTotal}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-2.5">
+                <p className="text-[10px] text-zinc-500">Tasks Completed</p>
+                <p className="font-mono font-bold text-emerald-300 mt-0.5">
+                  {selectedUserForDetails.tasksCompletedCount ??
+                    selectedUserForDetails.completedTaskIds?.length ??
+                    0}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-2.5">
+                <p className="text-[10px] text-zinc-500">Referrals</p>
+                <p className="font-mono font-bold text-white mt-0.5">
+                  {selectedUserForDetails.totalReferrals} ({selectedUserForDetails.activeReferrals}{' '}
+                  active)
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3 text-xs space-y-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Channel Verification &amp; Referrer
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                    selectedUserForDetails.joinedWaincomesite
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-zinc-900 text-zinc-400'
+                  }`}
+                >
+                  Channel 1: {selectedUserForDetails.joinedWaincomesite ? 'Joined' : 'Not Joined'}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${
+                    selectedUserForDetails.joinedPremiumApps
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-zinc-900 text-zinc-400'
+                  }`}
+                >
+                  Channel 2: {selectedUserForDetails.joinedPremiumApps ? 'Joined' : 'Not Joined'}
+                </span>
+                {selectedUserForDetails.referredBy && (
+                  <span className="px-2 py-0.5 rounded-md bg-zinc-900 text-zinc-300 font-mono text-[11px]">
+                    Referred By: {selectedUserForDetails.referredBy}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#070B09] border border-zinc-800/80 p-3 text-xs space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Withdrawals ({selectedUserForDetails.withdrawHistory?.length || 0})
+              </p>
+              {!selectedUserForDetails.withdrawHistory ||
+              selectedUserForDetails.withdrawHistory.length === 0 ? (
+                <p className="text-zinc-500">No withdrawal requests yet.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                  {selectedUserForDetails.withdrawHistory.map((w) => (
+                    <div
+                      key={w.id}
+                      className="flex items-center justify-between gap-2 rounded-lg bg-[#0E1512] border border-zinc-800/70 px-2.5 py-1.5"
+                    >
+                      <span className="font-mono font-bold text-white">
+                        {w.amountUsdt.toFixed(2)} USDT &middot; {w.address}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          w.status === 'Pending'
+                            ? 'bg-amber-500/20 text-amber-300'
+                            : w.status === 'Completed'
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-red-500/20 text-red-300'
+                        }`}
+                      >
+                        {w.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

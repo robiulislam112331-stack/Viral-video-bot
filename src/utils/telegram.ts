@@ -1,6 +1,9 @@
 export interface TelegramUserInfo {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
   avatarUrl: string;
   isTelegramUser: boolean;
   referrerId?: string;
@@ -207,14 +210,25 @@ export function initTelegramWebApp(): TelegramUserInfo {
   }
 
   const user = tg?.initDataUnsafe?.user;
-  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+  const firstName = user?.first_name?.trim() || undefined;
+  const lastName = user?.last_name?.trim() || undefined;
+  const username = user?.username?.trim().replace(/^@+/, '') || undefined;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
   const hasTelegramId = Boolean(user?.id);
   const resolvedId = hasTelegramId ? String(user!.id) : getOrCreateGuestUid();
 
   return {
     id: resolvedId,
-    name: fullName || user?.username || 'Earn Money User',
-    avatarUrl: user?.photo_url || DEFAULT_AVATAR,
+    name:
+      fullName ||
+      (username ? `@${username}` : '') ||
+      (hasTelegramId ? `User ${resolvedId}` : 'Preview Guest'),
+    firstName,
+    lastName,
+    username,
+    avatarUrl:
+      user?.photo_url ||
+      (hasTelegramId ? `/api/telegram/avatar/${resolvedId}` : DEFAULT_AVATAR),
     isTelegramUser: hasTelegramId,
     referrerId: extractReferrerId(tg?.initDataUnsafe?.start_param),
   };

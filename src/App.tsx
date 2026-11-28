@@ -130,8 +130,14 @@ const EarnMoneyApp: React.FC = () => {
     const params = new URLSearchParams({
       uid: tgUser.id,
       name: tgUser.name,
-      avatar: tgUser.avatarUrl,
+      isTg: tgUser.isTelegramUser ? '1' : '0',
     });
+    if (tgUser.firstName) params.set('firstName', tgUser.firstName);
+    if (tgUser.lastName) params.set('lastName', tgUser.lastName);
+    if (tgUser.username) params.set('username', tgUser.username);
+    if (tgUser.avatarUrl && tgUser.avatarUrl.startsWith('https://')) {
+      params.set('avatar', tgUser.avatarUrl);
+    }
     if (tgUser.referrerId) {
       params.set('ref', tgUser.referrerId);
     }
@@ -166,8 +172,8 @@ const EarnMoneyApp: React.FC = () => {
             (dynamicDailyTotal * (Number(syncedConfig.perAdViewReward) || 0)).toFixed(4)
           ),
           userId: data.state.userId || tgUser.id,
-          userName: tgUser.name || data.state.userName,
-          userAvatar: tgUser.avatarUrl || data.state.userAvatar,
+          userName: data.state.userName || tgUser.name,
+          userAvatar: data.state.userAvatar || tgUser.avatarUrl,
         };
         setState(nextMerged);
         cacheState(nextMerged);
@@ -175,7 +181,18 @@ const EarnMoneyApp: React.FC = () => {
     } catch {
       // ignore transient network errors
     }
-  }, [cacheConfig, cacheState, tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
+  }, [
+    cacheConfig,
+    cacheState,
+    tgUser.avatarUrl,
+    tgUser.firstName,
+    tgUser.id,
+    tgUser.isTelegramUser,
+    tgUser.lastName,
+    tgUser.name,
+    tgUser.referrerId,
+    tgUser.username,
+  ]);
 
   useEffect(() => {
     document.title = `${config.botName} — USDT BEP20 Mini App`;
@@ -275,7 +292,12 @@ const EarnMoneyApp: React.FC = () => {
     fetch('/api/earnmoney/ad-claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: state.userId, mode, slotId: targetSlot }),
+      body: JSON.stringify({
+        uid: state.userId,
+        mode,
+        slotId: targetSlot,
+        isTg: tgUser.isTelegramUser,
+      }),
     })
       .then(async (res) => {
         const data = (await res.json()) as {
@@ -318,7 +340,11 @@ const EarnMoneyApp: React.FC = () => {
     fetch('/api/earnmoney/tasks/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: state.userId, taskId: task.id }),
+      body: JSON.stringify({
+        uid: state.userId,
+        taskId: task.id,
+        isTg: tgUser.isTelegramUser,
+      }),
     })
       .then(async (res) => {
         const data = (await res.json()) as {
@@ -357,6 +383,7 @@ const EarnMoneyApp: React.FC = () => {
         title: taskInput.title,
         rewardUsdt: taskInput.rewardUsdt,
         url: taskInput.url,
+        isTg: tgUser.isTelegramUser,
       }),
     })
       .then(async (res) => {
@@ -400,7 +427,11 @@ const EarnMoneyApp: React.FC = () => {
     fetch('/api/earnmoney/mark-channel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: tgUser.id, channel }),
+      body: JSON.stringify({
+        uid: tgUser.id,
+        channel,
+        isTg: tgUser.isTelegramUser,
+      }),
     })
       .then(async (res) => {
         if (!res.ok) return;
