@@ -26,6 +26,7 @@
     {
       "id": "task_verify_app",
       "title": "Verify App",
+      "taskType": "Daily",
       "badge": "Daily",
       "rewardUsdt": 0.2,
       "url": "https://t.me/premiumapps5462",
@@ -34,5 +35,5 @@
       "createdBy": "admin"
     }
   ],
-  "updatedAt": "2026-11-28T08:09:30.244Z"
+  "updatedAt": "2026-11-28T08:34:49.596Z"
 }

@@ -1,6 +1,43 @@
-import type { EarnMoneyConfig, EarnMoneyState } from '../types/earnMoney';
+import type { BonusTaskItem, EarnMoneyConfig, EarnMoneyState, TaskType } from '../types/earnMoney';
 
 export const EARNMONEY_LIVE_CONFIG_KEY = 'earnmoney_live_config_v1';
+
+export const TASK_TYPES: TaskType[] = ['Permanent', 'Daily', '1 Week'];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
+
+export function normalizeTaskType(rawType?: string, rawBadge?: string): TaskType {
+  const candidate = (rawType || rawBadge || '').trim().toLowerCase();
+  if (candidate === 'permanent') return 'Permanent';
+  if (candidate === '1 week' || candidate === '1week' || candidate === 'weekly' || candidate === 'week') {
+    return '1 Week';
+  }
+  return 'Daily';
+}
+
+export function getTaskCooldownMs(taskType: TaskType): number {
+  if (taskType === 'Permanent') return Number.POSITIVE_INFINITY;
+  if (taskType === '1 Week') return WEEK_MS;
+  return DAY_MS;
+}
+
+export function isTaskCompletedForUser(
+  task: Pick<BonusTaskItem, 'id' | 'taskType' | 'badge' | 'completed'>,
+  state: Pick<EarnMoneyState, 'completedTaskIds' | 'taskCompletions'>,
+  now = Date.now()
+): boolean {
+  const resolvedType = normalizeTaskType(task.taskType, task.badge);
+  const completedAt = state.taskCompletions?.[task.id];
+  if (typeof completedAt === 'number' && Number.isFinite(completedAt) && completedAt > 0) {
+    if (resolvedType === 'Permanent') return true;
+    return now - completedAt < getTaskCooldownMs(resolvedType);
+  }
+  if (resolvedType === 'Permanent' && state.completedTaskIds?.includes(task.id)) {
+    return true;
+  }
+  return Boolean(task.completed);
+}
 
 export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   botName: 'Earn Money',
@@ -38,6 +75,7 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
     {
       id: 'task_verify_app',
       title: 'Verify App',
+      taskType: 'Daily',
       badge: 'Daily',
       rewardUsdt: 0.2,
       url: 'https://t.me/premiumapps5462',
@@ -139,9 +177,13 @@ export function createInitialEarnMoneyState(
     joinedPremiumApps: false,
     activateAdsDone: 0,
     completedTaskIds: [],
+    taskCompletions: {},
     bonusTasks: config.tasks
       .filter((t) => t.active !== false)
-      .map((t) => ({ ...t, completed: false })),
+      .map((t) => {
+        const taskType = normalizeTaskType(t.taskType, t.badge);
+        return { ...t, taskType, badge: taskType, completed: false };
+      }),
     referralsList: [],
     withdrawHistory: [],
   };

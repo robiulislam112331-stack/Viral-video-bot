@@ -16,6 +16,7 @@ import {
   EARNMONEY_LIVE_CONFIG_KEY,
   formatReferralLink,
   isReferActivationComplete,
+  isTaskCompletedForUser,
 } from './data/defaultEarnMoneyState';
 import type {
   BonusTaskItem,
@@ -269,7 +270,7 @@ const EarnMoneyApp: React.FC = () => {
   };
 
   const handleCompleteBonusTask = (task: BonusTaskItem) => {
-    if (task.completed) return;
+    if (task.completed || isTaskCompletedForUser(task, state)) return;
     if (task.url) {
       openExternalTelegramLink(task.url);
     }
@@ -290,13 +291,13 @@ const EarnMoneyApp: React.FC = () => {
           setConfig(data.config);
           cacheConfig(data.config);
         }
-        if (!res.ok) {
-          notify(data.error || 'Unable to verify task.');
-          return;
-        }
         if (data.state) {
           setState(data.state);
           cacheState(data.state);
+        }
+        if (!res.ok) {
+          notify(data.error || 'Unable to verify task.');
+          return;
         }
         if (!data.alreadyCompleted) {
           notify(`Verified! +${task.rewardUsdt.toFixed(2)} USDT credited.`);

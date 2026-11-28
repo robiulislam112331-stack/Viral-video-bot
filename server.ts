@@ -13,11 +13,16 @@ import type {
   VideoItem,
   VideoStatus,
 } from './src/types.ts';
+import {
+  isTaskCompletedForUser,
+  normalizeTaskType,
+} from './src/data/defaultEarnMoneyState.ts';
 import type {
   AdminWithdrawalRecord,
   BonusTaskItem,
   EarnMoneyConfig,
   EarnMoneyState,
+  TaskType,
 } from './src/types/earnMoney.ts';
 
 dotenv.config();
@@ -267,6 +272,7 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
     {
       id: 'task_verify_app',
       title: 'Verify App',
+      taskType: 'Daily',
       badge: 'Daily',
       rewardUsdt: 0.2,
       url: 'https://t.me/premiumapps5462',
@@ -287,16 +293,20 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
     const raw = fs.readFileSync(EARNMONEY_CONFIG_PATH, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<EarnMoneyConfig>;
     const tasks: BonusTaskItem[] = Array.isArray(parsed.tasks)
-      ? parsed.tasks.map((t) => ({
-          id: String(t.id || `task_${crypto.randomBytes(4).toString('hex')}`),
-          title: String(t.title || 'Task').slice(0, 80),
-          badge: String(t.badge || 'Daily').slice(0, 24),
-          rewardUsdt: Number.isFinite(Number(t.rewardUsdt)) ? Number(t.rewardUsdt) : 0.1,
-          url: typeof t.url === 'string' ? t.url : 'https://t.me/waincomesite',
-          completed: false,
-          active: t.active !== false,
-          createdBy: 'admin',
-        }))
+      ? parsed.tasks.map((t) => {
+          const taskType: TaskType = normalizeTaskType(t.taskType, t.badge);
+          return {
+            id: String(t.id || `task_${crypto.randomBytes(4).toString('hex')}`),
+            title: String(t.title || 'Task').slice(0, 80),
+            taskType,
+            badge: taskType,
+            rewardUsdt: Number.isFinite(Number(t.rewardUsdt)) ? Number(t.rewardUsdt) : 0.1,
+            url: typeof t.url === 'string' ? t.url : 'https://t.me/waincomesite',
+            completed: false,
+            active: t.active !== false,
+            createdBy: 'admin',
+          };
+        })
       : structuredClone(DEFAULT_EARNMONEY_CONFIG.tasks);
 
     const numOr = (val: unknown, fallback: number, min = 0) =>
@@ -453,34 +463,57 @@ function createZeroEarnMoneyUser(
     joinedPremiumApps: false,
     activateAdsDone: 0,
     completedTaskIds: [],
+    taskCompletions: {},
     bonusTasks: [],
     referralsList: [],
     withdrawHistory: [],
   };
 }
 
-function syncUserWithConfig(user: ServerEarnMoneyState): ServerEarnMoneyState {
+function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): ServerEarnMoneyState {
   const completedSet = new Set<string>(Array.isArray(user.completedTaskIds) ? user.completedTaskIds : []);
+  const taskCompletions: Record<string, number> =
+    user.taskCompletions && typeof user.taskCompletions === 'object' ? { ...user.taskCompletions } : {};
+
   if (Array.isArray(user.bonusTasks)) {
     for (const t of user.bonusTasks) {
       if (t.completed) completedSet.add(t.id);
     }
   }
 
+  const userSnapshot = {
+    completedTaskIds: Array.from(completedSet),
+    taskCompletions,
+  };
+
   const adminTasks = earnMoneyConfig.tasks
     .filter((t) => t.active !== false)
-    .map((t) => ({
-      ...t,
-      completed: completedSet.has(t.id),
-      createdBy: 'admin' as const,
-    }));
+    .map((t) => {
+      const taskType = normalizeTaskType(t.taskType, t.badge);
+      return {
+        ...t,
+        taskType,
+        badge: taskType,
+        completed: isTaskCompletedForUser({ ...t, taskType, badge: taskType, completed: false }, userSnapshot, now),
+        createdBy: 'admin' as const,
+      };
+    })
+    .filter((t) => !t.completed);
 
   const userCustomTasks = (Array.isArray(user.bonusTasks) ? user.bonusTasks : [])
     .filter((t) => t.createdBy === 'user')
-    .map((t) => ({
-      ...t,
-      completed: t.completed || completedSet.has(t.id),
-    }));
+    .map((t) => {
+      const taskType = normalizeTaskType(t.taskType, 'Permanent');
+      const done =
+        Boolean(t.completed) ||
+        isTaskCompletedForUser({ ...t, taskType, badge: t.badge || 'Community' }, userSnapshot, now);
+      return {
+        ...t,
+        taskType,
+        completed: done,
+      };
+    })
+    .filter((t) => !t.completed);
 
   const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
   const dailyCeiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
@@ -494,6 +527,7 @@ function syncUserWithConfig(user: ServerEarnMoneyState): ServerEarnMoneyState {
     nextSlotNumber: Math.min(dailyTotal, dailyCompleted + 1),
     dailyCeilingUsdt: dailyCeiling,
     completedTaskIds: Array.from(completedSet),
+    taskCompletions,
     bonusTasks: [...adminTasks, ...userCustomTasks],
     referralsList: Array.isArray(user.referralsList) ? user.referralsList : [],
     withdrawHistory: Array.isArray(user.withdrawHistory) ? user.withdrawHistory : [],
@@ -1086,12 +1120,6 @@ async function startServer() {
       return;
     }
 
-    const completedSet = new Set<string>(user.completedTaskIds || []);
-    if (completedSet.has(taskId)) {
-      res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig, alreadyCompleted: true });
-      return;
-    }
-
     const adminTask = earnMoneyConfig.tasks.find((t) => t.id === taskId && t.active !== false);
     const customTask = (user.bonusTasks || []).find((t) => t.id === taskId && t.createdBy === 'user');
     const targetTask = adminTask || customTask;
@@ -1100,6 +1128,35 @@ async function startServer() {
       return;
     }
 
+    const now = Date.now();
+    const resolvedType = normalizeTaskType(
+      targetTask.taskType,
+      customTask ? 'Permanent' : targetTask.badge
+    );
+    const completedSet = new Set<string>(user.completedTaskIds || []);
+    const taskCompletions =
+      user.taskCompletions && typeof user.taskCompletions === 'object' ? { ...user.taskCompletions } : {};
+
+    const alreadyDone = isTaskCompletedForUser(
+      { ...targetTask, taskType: resolvedType, completed: Boolean(customTask?.completed) },
+      { completedTaskIds: Array.from(completedSet), taskCompletions },
+      now
+    );
+    if (alreadyDone) {
+      res.status(400).json({
+        error:
+          resolvedType === 'Permanent'
+            ? 'Task already completed.'
+            : `Task already completed. Available again after ${resolvedType === '1 Week' ? '7 days' : '24 hours'}.`,
+        state: syncUserWithConfig(user, now),
+        config: earnMoneyConfig,
+        alreadyCompleted: true,
+      });
+      return;
+    }
+
+    taskCompletions[taskId] = now;
+    user.taskCompletions = taskCompletions;
     completedSet.add(taskId);
     user.completedTaskIds = Array.from(completedSet);
     if (customTask) {
@@ -1112,7 +1169,7 @@ async function startServer() {
     earnMoneyUsers[uid] = user;
     saveEarnMoneyUsers(earnMoneyUsers);
     res.json({
-      state: syncUserWithConfig(user),
+      state: syncUserWithConfig(user, now),
       config: earnMoneyConfig,
       rewardUsdt: targetTask.rewardUsdt,
     });
@@ -1997,10 +2054,10 @@ async function startServer() {
 
   app.post('/api/admin/earnmoney/tasks', requireAdmin, (req, res) => {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
-    const badge =
-      typeof req.body?.badge === 'string' && req.body.badge.trim()
-        ? req.body.badge.trim().slice(0, 24)
-        : 'Daily';
+    const taskType: TaskType = normalizeTaskType(
+      typeof req.body?.taskType === 'string' ? req.body.taskType : undefined,
+      typeof req.body?.badge === 'string' ? req.body.badge : undefined
+    );
     const rewardUsdt = Number(req.body?.rewardUsdt);
     const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
     const active = req.body?.active !== false;
@@ -2021,7 +2078,8 @@ async function startServer() {
     const newTask: BonusTaskItem = {
       id: `task_${crypto.randomBytes(5).toString('hex')}`,
       title,
-      badge,
+      taskType,
+      badge: taskType,
       rewardUsdt: Number(rewardUsdt.toFixed(4)),
       url,
       completed: false,
@@ -2053,9 +2111,13 @@ async function startServer() {
       }
       task.title = t;
     }
-    if (typeof req.body?.badge === 'string') {
-      const b = req.body.badge.trim().slice(0, 24);
-      if (b) task.badge = b;
+    if (typeof req.body?.taskType === 'string' || typeof req.body?.badge === 'string') {
+      const nextType = normalizeTaskType(
+        typeof req.body?.taskType === 'string' ? req.body.taskType : undefined,
+        typeof req.body?.badge === 'string' ? req.body.badge : undefined
+      );
+      task.taskType = nextType;
+      task.badge = nextType;
     }
     if (req.body?.rewardUsdt !== undefined) {
       const r = Number(req.body.rewardUsdt);

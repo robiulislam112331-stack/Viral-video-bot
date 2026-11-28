@@ -12,9 +12,12 @@ export type ModalType =
 
 export type ReferBonusType = 'instant' | 'after_activation';
 
+export type TaskType = 'Permanent' | 'Daily' | '1 Week';
+
 export interface BonusTaskItem {
   id: string;
   title: string;
+  taskType?: TaskType;
   badge: string;
   rewardUsdt: number;
   url?: string;
@@ -106,6 +109,7 @@ export interface EarnMoneyState {
   joinedPremiumApps: boolean;
   activateAdsDone: number;
   completedTaskIds?: string[];
+  taskCompletions?: Record<string, number>;
   bonusTasks: BonusTaskItem[];
   referralsList: ReferralItem[];
   withdrawHistory: WithdrawalItem[];

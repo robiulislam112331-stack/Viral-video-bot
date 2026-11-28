@@ -1,5 +1,9 @@
 import React from 'react';
-import { CheckCircle2, Flame, PlayCircle, PlusCircle, ShieldCheck } from 'lucide-react';
+import { Flame, PlayCircle, PlusCircle, ShieldCheck } from 'lucide-react';
+import {
+  isTaskCompletedForUser,
+  normalizeTaskType,
+} from '../../data/defaultEarnMoneyState';
 import type {
   BonusTaskItem,
   EarnMoneyConfig,
@@ -20,8 +24,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onOpenModal,
   onCompleteBonusTask,
 }) => {
-  const visibleTasks = state.bonusTasks.filter((t) => t.active !== false);
-  const availableTasksCount = visibleTasks.filter((t) => !t.completed).length;
+  const visibleTasks = state.bonusTasks.filter(
+    (t) => t.active !== false && !isTaskCompletedForUser(t, state)
+  );
+  const availableTasksCount = visibleTasks.length;
   const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
   const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
   const progressPct = Math.min(100, Math.round((state.dailyAdsCompleted / dailyTotal) * 100));
@@ -104,46 +110,52 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
 
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-          {visibleTasks.map((task) => (
-            <article
-              key={task.id}
-              className="mf-card-3d flex items-center justify-between gap-3 p-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="mf-icon-circle flex h-11 w-11 shrink-0 items-center justify-center">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="truncate font-display text-sm font-extrabold text-[#111827]">
-                      {task.title}
-                    </h3>
-                    <span className="rounded-md bg-[#00944A]/10 px-2 py-0.5 text-[10px] font-extrabold text-[#00944A]">
-                      {task.badge}
-                    </span>
+          {visibleTasks.map((task) => {
+            const displayBadge =
+              task.createdBy === 'user'
+                ? task.badge || 'Community'
+                : normalizeTaskType(task.taskType, task.badge);
+            const isDone = task.completed || isTaskCompletedForUser(task, state);
+            return (
+              <article
+                key={task.id}
+                className="mf-card-3d flex items-center justify-between gap-3 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="mf-icon-circle flex h-11 w-11 shrink-0 items-center justify-center">
+                    <ShieldCheck className="h-5 w-5" />
                   </div>
-                  <p className="mt-0.5 font-mono text-xs font-bold text-[#00944A] tabular-nums">
-                    +{task.rewardUsdt.toFixed(2)} USDT
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="truncate font-display text-sm font-extrabold text-[#111827]">
+                        {task.title}
+                      </h3>
+                      <span className="shrink-0 rounded-md bg-[#00944A]/10 px-2 py-0.5 text-[10px] font-extrabold text-[#00944A]">
+                        {displayBadge}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 font-mono text-xs font-bold text-[#00944A] tabular-nums">
+                      +{task.rewardUsdt.toFixed(2)} USDT
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              {task.completed ? (
-                <span className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-[20px] bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-[#00944A]">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Done</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onCompleteBonusTask(task)}
-                  className="mf-btn-outline-3d min-h-[42px] shrink-0 px-4 py-2 text-xs font-extrabold"
-                >
-                  VERIFY
-                </button>
-              )}
-            </article>
-          ))}
+                {isDone ? (
+                  <span className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-[20px] bg-emerald-50 px-3.5 py-2 text-xs font-extrabold text-[#00944A]">
+                    <span>Completed ✅</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onCompleteBonusTask(task)}
+                    className="mf-btn-outline-3d min-h-[42px] shrink-0 px-4 py-2 text-xs font-extrabold"
+                  >
+                    VERIFY
+                  </button>
+                )}
+              </article>
+            );
+          })}
 
           {/* Add Your Task Card: Dashed border 3D style */}
           <button

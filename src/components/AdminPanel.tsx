@@ -29,6 +29,8 @@ import {
 import {
   DEFAULT_EARNMONEY_CONFIG,
   EARNMONEY_LIVE_CONFIG_KEY,
+  normalizeTaskType,
+  TASK_TYPES,
 } from '../data/defaultEarnMoneyState';
 import type { AdminAuthStatus } from '../types';
 import type {
@@ -37,6 +39,7 @@ import type {
   EarnMoneyConfig,
   EarnMoneyState,
   ReferBonusType,
+  TaskType,
 } from '../types/earnMoney';
 
 type AdminTab = 'dashboard' | 'settings' | 'tasks' | 'users' | 'withdrawals';
@@ -163,11 +166,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [tasks, setTasks] = useState<BonusTaskItem[]>(DEFAULT_EARNMONEY_CONFIG.tasks);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
-  const [taskBadge, setTaskBadge] = useState('Daily');
+  const [taskType, setTaskType] = useState<TaskType>('Daily');
   const [taskReward, setTaskReward] = useState('0.20');
   const [taskUrl, setTaskUrl] = useState('https://t.me/waincomesite');
   const [taskActive, setTaskActive] = useState(true);
   const [savingTask, setSavingTask] = useState(false);
+  const [taskSavedMsg, setTaskSavedMsg] = useState<string | null>(null);
 
   // User Management State
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -385,7 +389,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const resetTaskForm = () => {
     setEditingTaskId(null);
     setTaskTitle('');
-    setTaskBadge('Daily');
+    setTaskType('Daily');
     setTaskReward('0.20');
     setTaskUrl(channel1Url || 'https://t.me/waincomesite');
     setTaskActive(true);
@@ -394,16 +398,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const handleEditTaskClick = (task: BonusTaskItem) => {
     setEditingTaskId(task.id);
     setTaskTitle(task.title);
-    setTaskBadge(task.badge);
+    setTaskType(normalizeTaskType(task.taskType, task.badge));
     setTaskReward(String(task.rewardUsdt));
     setTaskUrl(task.url || '');
     setTaskActive(task.active !== false);
+    setTaskSavedMsg(null);
   };
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminToken) return;
     setSavingTask(true);
+    setTaskSavedMsg(null);
     try {
       const endpoint = editingTaskId
         ? `/api/admin/earnmoney/tasks/${editingTaskId}`
@@ -418,7 +424,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         },
         body: JSON.stringify({
           title: taskTitle.trim(),
-          badge: taskBadge.trim() || 'Daily',
+          taskType,
+          badge: taskType,
           rewardUsdt: Number.parseFloat(taskReward),
           url: taskUrl.trim(),
           active: taskActive,
@@ -431,7 +438,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       }
       applyConfigToForm(data.config);
       resetTaskForm();
-      showToast('ok', editingTaskId ? 'Task updated successfully!' : 'Task added successfully!');
+      setTaskSavedMsg('Saved Successfully');
+      showToast('ok', 'Saved Successfully');
       void fetchOverview();
     } catch {
       showToast('err', 'Network error while saving task.');
@@ -1617,14 +1625,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
               <form onSubmit={(e) => void handleSaveTask(e)} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
+                  <label
+                    htmlFor="admin-task-title"
+                    className="block text-xs font-semibold text-zinc-400 mb-1"
+                  >
                     Task Title
                   </label>
                   <input
+                    id="admin-task-title"
                     type="text"
                     required
                     value={taskTitle}
-                    onChange={(e) => setTaskTitle(e.target.value)}
+                    onChange={(e) => {
+                      setTaskTitle(e.target.value);
+                      setTaskSavedMsg(null);
+                    }}
                     placeholder="e.g., Join Official Channel"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
                   />
@@ -1632,42 +1647,67 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1">
-                      Badge Label
+                    <label
+                      htmlFor="admin-task-type"
+                      className="block text-xs font-semibold text-zinc-400 mb-1"
+                    >
+                      Task Type
                     </label>
-                    <input
-                      type="text"
-                      value={taskBadge}
-                      onChange={(e) => setTaskBadge(e.target.value)}
-                      placeholder="Daily"
+                    <select
+                      id="admin-task-type"
+                      value={taskType}
+                      onChange={(e) => {
+                        setTaskType(e.target.value as TaskType);
+                        setTaskSavedMsg(null);
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none text-sm text-white"
-                    />
+                    >
+                      {TASK_TYPES.map((tType) => (
+                        <option key={tType} value={tType}>
+                          {tType}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-400 mb-1">
+                    <label
+                      htmlFor="admin-task-reward"
+                      className="block text-xs font-semibold text-zinc-400 mb-1"
+                    >
                       Reward (USDT)
                     </label>
                     <input
+                      id="admin-task-reward"
                       type="number"
                       step="0.01"
                       min="0.01"
                       required
                       value={taskReward}
-                      onChange={(e) => setTaskReward(e.target.value)}
+                      onChange={(e) => {
+                        setTaskReward(e.target.value);
+                        setTaskSavedMsg(null);
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-400 mb-1">
+                  <label
+                    htmlFor="admin-task-url"
+                    className="block text-xs font-semibold text-zinc-400 mb-1"
+                  >
                     Target Link URL
                   </label>
                   <input
+                    id="admin-task-url"
                     type="url"
                     required
                     value={taskUrl}
-                    onChange={(e) => setTaskUrl(e.target.value)}
+                    onChange={(e) => {
+                      setTaskUrl(e.target.value);
+                      setTaskSavedMsg(null);
+                    }}
                     placeholder="https://t.me/..."
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-xs text-white"
                   />
@@ -1678,7 +1718,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   <input
                     type="checkbox"
                     checked={taskActive}
-                    onChange={(e) => setTaskActive(e.target.checked)}
+                    onChange={(e) => {
+                      setTaskActive(e.target.checked);
+                      setTaskSavedMsg(null);
+                    }}
                     className="h-4 w-4 accent-[#00944A]"
                   />
                 </label>
@@ -1695,6 +1738,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   )}
                   <span>{editingTaskId ? 'Update Task' : 'Add New Task'}</span>
                 </button>
+
+                {taskSavedMsg && (
+                  <div className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-300">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{taskSavedMsg}</span>
+                  </div>
+                )}
               </form>
             </div>
 
@@ -1716,6 +1766,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                 <div className="space-y-3">
                   {tasks.map((task) => {
                     const isOn = task.active !== false;
+                    const displayType = normalizeTaskType(task.taskType, task.badge);
                     return (
                       <div
                         key={task.id}
@@ -1727,7 +1778,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                               {task.title}
                             </p>
                             <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 text-[10px] font-bold">
-                              {task.badge}
+                              {displayType}
                             </span>
                             <span
                               className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
