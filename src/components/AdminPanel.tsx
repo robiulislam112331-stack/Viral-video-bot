@@ -42,7 +42,13 @@ import type {
   TaskType,
 } from '../types/earnMoney';
 
-type AdminTab = 'dashboard' | 'settings' | 'tasks' | 'users' | 'withdrawals';
+type AdminTab =
+  | 'dashboard'
+  | 'settings'
+  | 'withdraw_settings'
+  | 'tasks'
+  | 'users'
+  | 'withdrawals';
 
 interface AdminStats {
   totalUsers: number;
@@ -114,8 +120,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [minWithdrawAmount, setMinWithdrawAmount] = useState(
     String(DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount)
   );
+  const [maxWithdrawAmount, setMaxWithdrawAmount] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.maxWithdrawAmount)
+  );
+  const [withdrawRequiredAds, setWithdrawRequiredAds] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.withdrawRequiredAds)
+  );
+  const [withdrawFeePercent, setWithdrawFeePercent] = useState(
+    String(DEFAULT_EARNMONEY_CONFIG.withdrawFeePercent)
+  );
   const [supportUsername, setSupportUsername] = useState(DEFAULT_EARNMONEY_CONFIG.supportUsername);
   const [generalSavedMsg, setGeneralSavedMsg] = useState<string | null>(null);
+  const [withdrawSavedMsg, setWithdrawSavedMsg] = useState<string | null>(null);
 
   // 1. Refer System Settings
   const [referBonusAmount, setReferBonusAmount] = useState(
@@ -196,7 +212,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     setWelcomeSubtitle(cfg.welcomeSubtitle);
     setChannel1Url(cfg.channel1Url);
     setChannel2Url(cfg.channel2Url);
-    setMinWithdrawAmount(String(cfg.minWithdrawAmount));
+    setMinWithdrawAmount(
+      String(cfg.minWithdrawAmount ?? DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount)
+    );
+    setMaxWithdrawAmount(
+      String(cfg.maxWithdrawAmount ?? DEFAULT_EARNMONEY_CONFIG.maxWithdrawAmount)
+    );
+    setWithdrawRequiredAds(
+      String(cfg.withdrawRequiredAds ?? DEFAULT_EARNMONEY_CONFIG.withdrawRequiredAds)
+    );
+    setWithdrawFeePercent(
+      String(cfg.withdrawFeePercent ?? DEFAULT_EARNMONEY_CONFIG.withdrawFeePercent)
+    );
     setSupportUsername(cfg.supportUsername);
 
     setReferBonusAmount(String(cfg.referBonusAmount));
@@ -211,7 +238,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     setPremiumAdsBudget(String(cfg.premiumAdsBudget ?? 100));
     setPerAdViewReward(String(cfg.perAdViewReward ?? 0.01));
     setPerAdClickReward(String(cfg.perAdClickReward ?? 0.02));
-    setDailyAdsLimitPerUser(String(cfg.dailyAdsLimitPerUser ?? 20));
+    setDailyAdsLimitPerUser(
+      String(cfg.dailyAdsLimitPerUser ?? DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser)
+    );
     setAdsSlotPriceForAdvertiser(String(cfg.adsSlotPriceForAdvertiser ?? 5));
     setMonetagLink(cfg.monetagLink || DEFAULT_EARNMONEY_CONFIG.monetagLink);
 
@@ -303,7 +332,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
 
   // --- Shared Settings Persistence ---
   const saveConfigPayload = async (
-    sectionKey: 'maintenance' | 'general' | 'refer' | 'ads',
+    sectionKey: 'maintenance' | 'general' | 'refer' | 'ads' | 'withdraw',
     payload: Partial<EarnMoneyConfig>
   ) => {
     if (!adminToken) return;
@@ -312,6 +341,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     if (sectionKey === 'general') setGeneralSavedMsg(null);
     if (sectionKey === 'refer') setReferSavedMsg(null);
     if (sectionKey === 'ads') setAdsSavedMsg(null);
+    if (sectionKey === 'withdraw') setWithdrawSavedMsg(null);
 
     try {
       const res = await fetch('/api/admin/earnmoney/settings', {
@@ -332,6 +362,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       if (sectionKey === 'general') setGeneralSavedMsg('Saved Successfully');
       if (sectionKey === 'refer') setReferSavedMsg('Saved Successfully');
       if (sectionKey === 'ads') setAdsSavedMsg('Saved Successfully');
+      if (sectionKey === 'withdraw') setWithdrawSavedMsg('Saved Successfully');
       showToast('ok', 'Saved Successfully');
     } catch {
       showToast('err', 'Network error while saving settings.');
@@ -362,6 +393,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     });
   };
 
+  const handleSaveWithdraw = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedRequiredAds = Number.parseInt(withdrawRequiredAds || '0', 10);
+    const parsedMin = Number.parseFloat(minWithdrawAmount);
+    const parsedMax = maxWithdrawAmount.trim() === '' ? 0 : Number.parseFloat(maxWithdrawAmount);
+    const parsedFee = withdrawFeePercent.trim() === '' ? 0 : Number.parseFloat(withdrawFeePercent);
+
+    if (!Number.isFinite(parsedRequiredAds) || parsedRequiredAds < 0) {
+      showToast('err', 'Required Ads to Unlock Withdraw must be 0 or higher.');
+      return;
+    }
+    if (!Number.isFinite(parsedMin) || parsedMin < 0) {
+      showToast('err', 'Minimum Withdraw Amount must be 0 or higher.');
+      return;
+    }
+    if (!Number.isFinite(parsedMax) || parsedMax < 0) {
+      showToast('err', 'Maximum Withdraw Amount must be 0 or higher.');
+      return;
+    }
+    if (parsedMax > 0 && parsedMax < parsedMin) {
+      showToast('err', 'Maximum Withdraw Amount must be 0 (unlimited) or >= Minimum Withdraw Amount.');
+      return;
+    }
+    if (!Number.isFinite(parsedFee) || parsedFee < 0 || parsedFee > 100) {
+      showToast('err', 'Withdraw Fee % must be between 0 and 100.');
+      return;
+    }
+
+    void saveConfigPayload('withdraw', {
+      withdrawRequiredAds: parsedRequiredAds,
+      minWithdrawAmount: parsedMin,
+      maxWithdrawAmount: parsedMax,
+      withdrawFeePercent: parsedFee,
+    });
+  };
+
   const handleSaveRefer = (e: React.FormEvent) => {
     e.preventDefault();
     void saveConfigPayload('refer', {
@@ -382,7 +449,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       premiumAdsBudget: Number.parseFloat(premiumAdsBudget),
       perAdViewReward: Number.parseFloat(perAdViewReward),
       perAdClickReward: Number.parseFloat(perAdClickReward),
-      dailyAdsLimitPerUser: Number.parseInt(dailyAdsLimitPerUser || '20', 10),
+      dailyAdsLimitPerUser: Number.parseInt(
+        dailyAdsLimitPerUser || String(DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser),
+        10
+      ),
       adsSlotPriceForAdvertiser: Number.parseFloat(adsSlotPriceForAdvertiser),
       monetagLink: monetagLink.trim(),
     });
@@ -743,6 +813,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
           {[
             { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
             { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
+            {
+              id: 'withdraw_settings',
+              label: 'Withdraw Settings',
+              icon: <ShieldCheck className="w-4 h-4" />,
+            },
             { id: 'tasks', label: `Tasks (${stats.totalTasks})`, icon: <ClipboardList className="w-4 h-4" /> },
             { id: 'users', label: `Users (${stats.totalUsers})`, icon: <Users className="w-4 h-4" /> },
             {
@@ -973,10 +1048,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                       {Number(perAdClickReward || 0).toFixed(4)}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1.5">
-                    <span className="text-zinc-400">Min Withdraw</span>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-800/70">
+                    <span className="text-zinc-400">Withdraw Unlock Ads</span>
                     <span className="font-mono font-bold text-emerald-400">
-                      {Number(minWithdrawAmount || 0).toFixed(2)} USDT
+                      {Number(withdrawRequiredAds || 0)} Ads
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-zinc-800/70">
+                    <span className="text-zinc-400">Min / Max Withdraw</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      ${Number(minWithdrawAmount || 0).toFixed(2)} /{' '}
+                      {Number(maxWithdrawAmount || 0) > 0
+                        ? `$${Number(maxWithdrawAmount).toFixed(2)}`
+                        : 'Unlimited'}{' '}
+                      USDT
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-zinc-400">Withdraw Fee</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      {Number(withdrawFeePercent || 0)}%
                     </span>
                   </div>
                 </div>
@@ -996,21 +1087,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                   </button>
                   <button
                     type="button"
+                    onClick={() => setActiveTab('withdraw_settings')}
+                    className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-left"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 mb-1.5" />
+                    <p className="text-xs font-bold text-white">Withdraw Settings</p>
+                    <p className="text-[11px] text-zinc-500">Unlock Ads, Limits &amp; Fee</p>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setActiveTab('tasks')}
                     className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-left"
                   >
                     <ClipboardList className="w-4 h-4 text-emerald-400 mb-1.5" />
                     <p className="text-xs font-bold text-white">Manage Tasks</p>
                     <p className="text-[11px] text-zinc-500">Add, Edit &amp; Toggle</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('users')}
-                    className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-emerald-500/40 text-left"
-                  >
-                    <Users className="w-4 h-4 text-emerald-400 mb-1.5" />
-                    <p className="text-xs font-bold text-white">Manage Users</p>
-                    <p className="text-[11px] text-zinc-500">Balance &amp; Block</p>
                   </button>
                   <button
                     type="button"
@@ -1315,7 +1406,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                       htmlFor="admin-per-ad-view"
                       className="block text-xs font-semibold text-zinc-300 mb-1.5"
                     >
-                      Per Ad View Reward (USDT)
+                      Reward Per Ad (USDT)
                     </label>
                     <input
                       id="admin-per-ad-view"
@@ -1359,13 +1450,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                       htmlFor="admin-daily-ads-limit"
                       className="block text-xs font-semibold text-zinc-300 mb-1.5"
                     >
-                      Daily Ads Limit Per User
+                      Total Daily Ad Slots
                     </label>
                     <input
                       id="admin-daily-ads-limit"
                       type="number"
                       step="1"
                       min="1"
+                      max="1000"
                       required
                       value={dailyAdsLimitPerUser}
                       onChange={(e) => {
@@ -1373,6 +1465,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                         setAdsSavedMsg(null);
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-daily-ceiling"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Daily Earning Ceiling (Auto)
+                    </label>
+                    <input
+                      id="admin-daily-ceiling"
+                      type="text"
+                      readOnly
+                      value={`${(
+                        Math.max(0, Number.parseInt(dailyAdsLimitPerUser || '0', 10) || 0) *
+                        (Number.parseFloat(perAdViewReward || '0') || 0)
+                      ).toFixed(4)} USDT`}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09]/70 border border-zinc-800/80 font-mono text-sm font-bold text-emerald-400 outline-none cursor-default"
                     />
                   </div>
 
@@ -1627,7 +1738,307 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                 </div>
               </form>
             </section>
+
+            {/* D. WITHDRAW SETTINGS (also accessible via Withdraw Settings tab) */}
+            <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-lg font-bold text-white">
+                      Withdraw Settings
+                    </h2>
+                    <p className="text-xs text-zinc-400">
+                      Control required ads to unlock withdraw, minimum/maximum limits, and fee percentage.
+                    </p>
+                  </div>
+                </div>
+                {withdrawSavedMsg && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {withdrawSavedMsg}
+                  </span>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveWithdraw} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="admin-settings-wd-ads"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Required Ads to Unlock Withdraw
+                    </label>
+                    <input
+                      id="admin-settings-wd-ads"
+                      type="number"
+                      min="0"
+                      step="1"
+                      required
+                      value={withdrawRequiredAds}
+                      onChange={(e) => {
+                        setWithdrawRequiredAds(e.target.value);
+                        setWithdrawSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Default: 10. Set 0 to unlock withdraw without watching ads.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-settings-wd-min"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Minimum Withdraw Amount (USDT)
+                    </label>
+                    <input
+                      id="admin-settings-wd-min"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={minWithdrawAmount}
+                      onChange={(e) => {
+                        setMinWithdrawAmount(e.target.value);
+                        setWithdrawSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Default: 1.00 USDT. Users cannot withdraw below this amount.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-settings-wd-max"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Maximum Withdraw Amount (USDT) — Optional
+                    </label>
+                    <input
+                      id="admin-settings-wd-max"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={maxWithdrawAmount}
+                      onChange={(e) => {
+                        setMaxWithdrawAmount(e.target.value);
+                        setWithdrawSavedMsg(null);
+                      }}
+                      placeholder="100 (0 = Unlimited)"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Default: 100 USDT. Leave blank or 0 for unlimited.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="admin-settings-wd-fee"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Withdraw Fee %
+                    </label>
+                    <input
+                      id="admin-settings-wd-fee"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      required
+                      value={withdrawFeePercent}
+                      onChange={(e) => {
+                        setWithdrawFeePercent(e.target.value);
+                        setWithdrawSavedMsg(null);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Default: 0%. Deducted from payout when user submits a request.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={savingSection === 'withdraw'}
+                    className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2 transition-all"
+                  >
+                    {savingSection === 'withdraw' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>Save Withdraw Settings</span>
+                  </button>
+
+                  {withdrawSavedMsg && (
+                    <span className="text-sm font-bold text-emerald-400">{withdrawSavedMsg}</span>
+                  )}
+                </div>
+              </form>
+            </section>
           </div>
+        )}
+
+        {/* 2B. DEDICATED WITHDRAW SETTINGS PAGE */}
+        {activeTab === 'withdraw_settings' && (
+          <section className="rounded-2xl border border-zinc-800/90 bg-[#0E1512] p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="font-display text-lg font-bold text-white">
+                    Withdraw Settings
+                  </h2>
+                  <p className="text-xs text-zinc-400">
+                    Edit Required Ads to Unlock Withdraw, Minimum/Maximum USDT limits, and Withdraw Fee %. Updates bot live.
+                  </p>
+                </div>
+              </div>
+              {withdrawSavedMsg && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-bold text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4" />
+                  {withdrawSavedMsg}
+                </span>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveWithdraw} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    htmlFor="admin-wd-required-ads"
+                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                  >
+                    Required Ads to Unlock Withdraw
+                  </label>
+                  <input
+                    id="admin-wd-required-ads"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value={withdrawRequiredAds}
+                    onChange={(e) => {
+                      setWithdrawRequiredAds(e.target.value);
+                      setWithdrawSavedMsg(null);
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Default: 10. Users watching fewer ads today see LOCKED on the Bot Withdraw page.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-wd-min-amount"
+                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                  >
+                    Minimum Withdraw Amount (USDT)
+                  </label>
+                  <input
+                    id="admin-wd-min-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={minWithdrawAmount}
+                    onChange={(e) => {
+                      setMinWithdrawAmount(e.target.value);
+                      setWithdrawSavedMsg(null);
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Default: 1.00 USDT. Lower amounts are blocked with &quot;Minimum Withdraw is $X USDT&quot;.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-wd-max-amount"
+                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                  >
+                    Maximum Withdraw Amount (USDT) — Optional
+                  </label>
+                  <input
+                    id="admin-wd-max-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={maxWithdrawAmount}
+                    onChange={(e) => {
+                      setMaxWithdrawAmount(e.target.value);
+                      setWithdrawSavedMsg(null);
+                    }}
+                    placeholder="100 (0 = Unlimited)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Default: 100 USDT. Higher amounts are blocked with &quot;Maximum Withdraw is $X USDT&quot;. Set 0 or blank for unlimited.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="admin-wd-fee-percent"
+                    className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                  >
+                    Withdraw Fee %
+                  </label>
+                  <input
+                    id="admin-wd-fee-percent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    required
+                    value={withdrawFeePercent}
+                    onChange={(e) => {
+                      setWithdrawFeePercent(e.target.value);
+                      setWithdrawSavedMsg(null);
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
+                  />
+                  <p className="mt-1 text-[11px] text-zinc-500">
+                    Default: 0%. Automatically applied to withdrawal payouts.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={savingSection === 'withdraw'}
+                  className="px-6 py-3 rounded-xl bg-[#00944A] hover:bg-[#00A854] disabled:opacity-50 font-bold text-sm text-white flex items-center gap-2 transition-all"
+                >
+                  {savingSection === 'withdraw' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  <span>Save Withdraw Settings</span>
+                </button>
+
+                {withdrawSavedMsg && (
+                  <span className="text-sm font-bold text-emerald-400">{withdrawSavedMsg}</span>
+                )}
+              </div>
+            </form>
+          </section>
         )}
 
         {/* 3. TASK MANAGEMENT TAB */}
@@ -2013,9 +2424,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
         {activeTab === 'withdrawals' && (
           <section className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-display text-base font-bold text-white">
-                Withdrawal Requests ({filteredWithdrawals.length})
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="font-display text-base font-bold text-white">
+                  Withdrawal Requests ({filteredWithdrawals.length})
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('withdraw_settings')}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 text-xs font-bold text-emerald-300 flex items-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Withdraw Settings</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 {(['all', 'Pending', 'Completed', 'Rejected'] as const).map((statusKey) => (
@@ -2053,6 +2474,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                           <span className="font-mono text-base font-extrabold text-emerald-400 tabular-nums">
                             {wd.amountUsdt.toFixed(2)} USDT
                           </span>
+                          {wd.feePercent && wd.feePercent > 0 && wd.netAmountUsdt !== undefined && (
+                            <span className="font-mono text-[11px] font-semibold text-zinc-400">
+                              (Net {wd.netAmountUsdt.toFixed(2)} &middot; {wd.feePercent}% fee)
+                            </span>
+                          )}
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                               wd.status === 'Pending'

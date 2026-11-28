@@ -248,7 +248,10 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   welcomeSubtitle: 'Join our 2 official channels to stay updated.',
   channel1Url: 'https://t.me/waincomesite',
   channel2Url: 'https://t.me/premiumapps5462',
-  minWithdrawAmount: 0.8,
+  minWithdrawAmount: 1,
+  maxWithdrawAmount: 100,
+  withdrawRequiredAds: 10,
+  withdrawFeePercent: 0,
   supportUsername: '@waincomesite',
 
   referBonusAmount: 0.1,
@@ -263,7 +266,7 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   premiumAdsBudget: 100,
   perAdViewReward: 0.01,
   perAdClickReward: 0.02,
-  dailyAdsLimitPerUser: 20,
+  dailyAdsLimitPerUser: 100,
   adsSlotPriceForAdvertiser: 5,
   monetagLink: DEFAULT_MONETAG_LINK,
 
@@ -338,6 +341,14 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
           ? parsed.channel2Url.trim()
           : DEFAULT_EARNMONEY_CONFIG.channel2Url,
       minWithdrawAmount: numOr(parsed.minWithdrawAmount, DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount),
+      maxWithdrawAmount: numOr(parsed.maxWithdrawAmount, DEFAULT_EARNMONEY_CONFIG.maxWithdrawAmount),
+      withdrawRequiredAds: Math.floor(
+        numOr(parsed.withdrawRequiredAds, DEFAULT_EARNMONEY_CONFIG.withdrawRequiredAds)
+      ),
+      withdrawFeePercent: Math.min(
+        100,
+        numOr(parsed.withdrawFeePercent, DEFAULT_EARNMONEY_CONFIG.withdrawFeePercent)
+      ),
       supportUsername:
         typeof parsed.supportUsername === 'string' && parsed.supportUsername.trim()
           ? parsed.supportUsername.trim()
@@ -441,7 +452,7 @@ function createZeroEarnMoneyUser(
   userName: string,
   userAvatar: string
 ): ServerEarnMoneyState {
-  const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+  const dailyTotal = Math.max(1, Number(earnMoneyConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
   const ceiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
   const instantRefer =
     earnMoneyConfig.referMinAdsWatched === 0 &&
@@ -553,7 +564,7 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
     })
     .filter((t) => !t.completed);
 
-  const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+  const dailyTotal = Math.max(1, Number(earnMoneyConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
   const dailyCeiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
   const adSlotClaims = getUserAdSlotClaimsMap(user.userId);
   const claimedSlotCount = Object.values(adSlotClaims).filter((r) => r.view_reward_claimed).length;
@@ -1113,7 +1124,7 @@ async function startServer() {
       return;
     }
 
-    const dailyLimit = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
+    const dailyLimit = Math.max(1, Number(earnMoneyConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
     const requestedSlotRaw = Number(req.body?.slotId);
     const defaultNextSlot = Math.min(dailyLimit, (user.dailyAdsCompleted || 0) + 1);
     const slotId =
@@ -1399,10 +1410,26 @@ async function startServer() {
       return;
     }
 
-    const minWithdraw = earnMoneyConfig.minWithdrawAmount;
+    const requiredAds = Math.max(0, Math.floor(Number(earnMoneyConfig.withdrawRequiredAds ?? 0)));
+    const adsWatchedToday = Math.max(0, Number(user.dailyAdsCompleted || 0));
+    if (requiredAds > 0 && adsWatchedToday < requiredAds) {
+      res.status(400).json({
+        error: `Withdraw is locked. ${adsWatchedToday} / ${requiredAds} Ads Watched.`,
+      });
+      return;
+    }
+
+    const minWithdraw = Math.max(0, Number(earnMoneyConfig.minWithdrawAmount ?? 1));
     if (!Number.isFinite(amount) || amount < minWithdraw) {
       res.status(400).json({
-        error: `Minimum withdrawal amount is ${minWithdraw.toFixed(2)} USDT.`,
+        error: `Minimum Withdraw is $${minWithdraw.toFixed(2)} USDT`,
+      });
+      return;
+    }
+    const maxWithdraw = Math.max(0, Number(earnMoneyConfig.maxWithdrawAmount ?? 0));
+    if (maxWithdraw > 0 && amount > maxWithdraw) {
+      res.status(400).json({
+        error: `Maximum Withdraw is $${maxWithdraw.toFixed(2)} USDT`,
       });
       return;
     }
@@ -1414,6 +1441,10 @@ async function startServer() {
       res.status(400).json({ error: 'Enter a valid BEP20 (BSC) wallet address starting with 0x.' });
       return;
     }
+
+    const feePercent = Math.min(100, Math.max(0, Number(earnMoneyConfig.withdrawFeePercent ?? 0)));
+    const feeUsdt = Number(((amount * feePercent) / 100).toFixed(4));
+    const netAmountUsdt = Number((amount - feeUsdt).toFixed(4));
 
     const shortAddr =
       address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address;
@@ -1428,6 +1459,9 @@ async function startServer() {
       {
         id: `wd_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
         amountUsdt: Number(amount.toFixed(4)),
+        feePercent: Number(feePercent.toFixed(2)),
+        feeUsdt,
+        netAmountUsdt,
         address: shortAddr,
         date: todayLabel,
         status: 'Pending',
@@ -1439,7 +1473,10 @@ async function startServer() {
     saveEarnMoneyUsers(earnMoneyUsers);
     res.status(201).json({
       state: syncUserWithConfig(user),
-      message: `Withdrawal request for ${amount.toFixed(2)} USDT submitted to ${shortAddr}.`,
+      message:
+        feePercent > 0
+          ? `Withdrawal request for ${amount.toFixed(2)} USDT submitted (Net: ${netAmountUsdt.toFixed(2)} USDT after ${feePercent}% fee).`
+          : `Withdrawal request for ${amount.toFixed(2)} USDT submitted to ${shortAddr}.`,
     });
   });
 
@@ -2005,6 +2042,18 @@ async function startServer() {
       body.minWithdrawAmount !== undefined
         ? Number(body.minWithdrawAmount)
         : earnMoneyConfig.minWithdrawAmount;
+    const maxWithdrawAmount =
+      body.maxWithdrawAmount !== undefined
+        ? Number(body.maxWithdrawAmount)
+        : earnMoneyConfig.maxWithdrawAmount;
+    const withdrawRequiredAds =
+      body.withdrawRequiredAds !== undefined
+        ? Number(body.withdrawRequiredAds)
+        : earnMoneyConfig.withdrawRequiredAds;
+    const withdrawFeePercent =
+      body.withdrawFeePercent !== undefined
+        ? Number(body.withdrawFeePercent)
+        : earnMoneyConfig.withdrawFeePercent;
     const supportUsername =
       body.supportUsername !== undefined
         ? String(body.supportUsername).trim().slice(0, 80)
@@ -2105,6 +2154,9 @@ async function startServer() {
     const nonNegativeNumbers = [
       referBonusAmount,
       minWithdrawAmount,
+      maxWithdrawAmount,
+      withdrawRequiredAds,
+      withdrawFeePercent,
       referMinAdsWatched,
       referMinChannelsJoined,
       referMinTasksCompleted,
@@ -2116,6 +2168,16 @@ async function startServer() {
     ];
     if (nonNegativeNumbers.some((n) => !Number.isFinite(n) || n < 0)) {
       res.status(400).json({ error: 'Numeric reward, rule, and budget values must be 0 or higher.' });
+      return;
+    }
+    if (maxWithdrawAmount > 0 && maxWithdrawAmount < minWithdrawAmount) {
+      res.status(400).json({
+        error: 'Maximum Withdraw Amount must be 0 (unlimited) or greater than or equal to Minimum Withdraw Amount.',
+      });
+      return;
+    }
+    if (withdrawFeePercent > 100) {
+      res.status(400).json({ error: 'Withdraw Fee % must be between 0 and 100.' });
       return;
     }
     if (!Number.isFinite(dailyAdsLimitPerUser) || dailyAdsLimitPerUser < 1 || dailyAdsLimitPerUser > 1000) {
@@ -2139,6 +2201,9 @@ async function startServer() {
       channel1Url,
       channel2Url,
       minWithdrawAmount: Number(minWithdrawAmount.toFixed(4)),
+      maxWithdrawAmount: Number(maxWithdrawAmount.toFixed(4)),
+      withdrawRequiredAds: Math.floor(withdrawRequiredAds),
+      withdrawFeePercent: Number(withdrawFeePercent.toFixed(2)),
       supportUsername:
         supportUsername.startsWith('@') || supportUsername.startsWith('http')
           ? supportUsername

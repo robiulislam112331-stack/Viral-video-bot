@@ -28,9 +28,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
     (t) => t.active !== false && !isTaskCompletedForUser(t, state)
   );
   const availableTasksCount = visibleTasks.length;
-  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
-  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
-  const progressPct = Math.min(100, Math.round((state.dailyAdsCompleted / dailyTotal) * 100));
+  const dailyTotal = Math.max(
+    1,
+    Number(config.dailyAdsLimitPerUser) || Number(state.dailyAdsTotal) || 1
+  );
+  const completedCount = Math.min(dailyTotal, state.dailyAdsCompleted || 0);
+  const dailyCeiling = Number((dailyTotal * (Number(config.perAdViewReward) || 0)).toFixed(4));
+  const progressPct = Math.min(100, Math.round((completedCount / dailyTotal) * 100));
   const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
 
   return (
@@ -61,7 +65,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
               <p className="text-xs font-medium text-slate-500">
                 {adsSlotEmpty
                   ? 'Premium Ads Slot Empty'
-                  : `Daily Limit: ${state.dailyAdsCompleted}/${dailyTotal} (Max $${dailyCeiling.toFixed(4)})`}
+                  : `Daily Limit: ${completedCount}/${dailyTotal} (Max $${dailyCeiling.toFixed(4)})`}
               </p>
             </div>
           </div>
@@ -86,7 +90,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
           >
             {adsSlotEmpty
               ? 'Premium Ads Slot Empty'
-              : `Verify to Start (Slot #${Math.min(dailyTotal, state.dailyAdsCompleted + 1)})`}
+              : `Verify to Start (Slot #${Math.min(dailyTotal, completedCount + 1)})`}
           </button>
           <button
             type="button"

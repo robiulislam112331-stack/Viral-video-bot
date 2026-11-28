@@ -55,8 +55,11 @@ export const Modals: React.FC<ModalsProps> = ({
   onNotify,
 }) => {
   const supportUrl = buildSupportTelegramUrl(config.supportUsername);
-  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
-  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
+  const dailyTotal = Math.max(
+    1,
+    Number(config.dailyAdsLimitPerUser) || Number(state.dailyAdsTotal) || 1
+  );
+  const dailyCeiling = Number((dailyTotal * (Number(config.perAdViewReward) || 0)).toFixed(4));
   const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
   const currentSlotId = Math.min(
     dailyTotal,

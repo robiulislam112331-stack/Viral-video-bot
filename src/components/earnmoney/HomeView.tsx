@@ -24,9 +24,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigateTab,
   onOpenModal,
 }) => {
-  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
-  const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
-  const progressPct = Math.min(100, Math.round((state.dailyAdsCompleted / dailyTotal) * 100));
+  const dailyTotal = Math.max(
+    1,
+    Number(config.dailyAdsLimitPerUser) || Number(state.dailyAdsTotal) || 1
+  );
+  const completedCount = Math.min(dailyTotal, state.dailyAdsCompleted || 0);
+  const dailyCeiling = Number((dailyTotal * (Number(config.perAdViewReward) || 0)).toFixed(4));
+  const progressPct = Math.min(100, Math.round((completedCount / dailyTotal) * 100));
   const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
 
   const listItems: {
@@ -155,11 +159,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <span className="text-slate-600">
                 Daily Ad Slots:{' '}
                 <strong className="text-[#111827] tabular-nums">
-                  {state.dailyAdsCompleted}/{dailyTotal} Completed
+                  {completedCount}/{dailyTotal} Completed
                 </strong>
               </span>
               <span className="font-bold text-[#00944A] tabular-nums">
-                Next: Slot #{Math.min(dailyTotal, state.dailyAdsCompleted + 1)}
+                Next: Slot #{Math.min(dailyTotal, completedCount + 1)}
               </span>
             </div>
 

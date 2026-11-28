@@ -150,14 +150,23 @@ const EarnMoneyApp: React.FC = () => {
         cacheConfig(data.config);
       }
       if (data?.state) {
+        const syncedConfig = data.config || DEFAULT_EARNMONEY_CONFIG;
+        const dynamicDailyTotal = Math.max(
+          1,
+          Number(syncedConfig.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser
+        );
         const nextMerged: EarnMoneyState = {
           ...createInitialEarnMoneyState(
             tgUser.id,
             tgUser.name,
             tgUser.avatarUrl,
-            data.config || DEFAULT_EARNMONEY_CONFIG
+            syncedConfig
           ),
           ...data.state,
+          dailyAdsTotal: dynamicDailyTotal,
+          dailyCeilingUsdt: Number(
+            (dynamicDailyTotal * (Number(syncedConfig.perAdViewReward) || 0)).toFixed(4)
+          ),
           userId: tgUser.id,
           userName: tgUser.name,
           userAvatar: tgUser.avatarUrl,
@@ -219,6 +228,7 @@ const EarnMoneyApp: React.FC = () => {
 
   const handleNavigateTab = (tab: EarnMoneyTab, scrollToHistory = false) => {
     setActiveTab(tab);
+    void syncFromServer();
     if (tab === 'withdraw' && scrollToHistory) {
       setScrollHistoryQueued(true);
     } else {
@@ -228,7 +238,10 @@ const EarnMoneyApp: React.FC = () => {
 
   const handleOpenModal = (modal: ModalType, slotId?: number) => {
     if (modal === 'ad_watch') {
-      const dailyLimit = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+      const dailyLimit = Math.max(
+        1,
+        Number(config.dailyAdsLimitPerUser) || Number(state.dailyAdsTotal) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser
+      );
       const nextSlot = Math.min(dailyLimit, Math.max(1, slotId ?? state.nextSlotNumber ?? state.dailyAdsCompleted + 1));
       setActiveAdSlotId(nextSlot);
     }
@@ -240,7 +253,10 @@ const EarnMoneyApp: React.FC = () => {
       notify('Premium Ads Slot Empty');
       return;
     }
-    const dailyLimit = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+    const dailyLimit = Math.max(
+      1,
+      Number(config.dailyAdsLimitPerUser) || Number(state.dailyAdsTotal) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser
+    );
     const targetSlot = slotId ?? activeAdSlotId ?? Math.min(dailyLimit, state.dailyAdsCompleted + 1);
     const existingClaim = state.adSlotClaims?.[String(targetSlot)];
 
@@ -448,12 +464,31 @@ const EarnMoneyApp: React.FC = () => {
     amount: number,
     address: string
   ): Promise<{ ok: boolean; message: string }> => {
-    if (amount < config.minWithdrawAmount) {
+    const requiredAds = Math.max(0, Math.floor(Number(config.withdrawRequiredAds ?? 0)));
+    const adsWatchedToday = Math.max(0, Number(state.dailyAdsCompleted || 0));
+    if (requiredAds > 0 && adsWatchedToday < requiredAds) {
       return {
         ok: false,
-        message: `Minimum withdrawal is ${config.minWithdrawAmount.toFixed(2)} USDT.`,
+        message: `Withdraw is locked. ${adsWatchedToday} / ${requiredAds} Ads Watched.`,
       };
     }
+
+    const minWithdraw = Math.max(0, Number(config.minWithdrawAmount ?? 1));
+    if (!Number.isFinite(amount) || amount < minWithdraw) {
+      return {
+        ok: false,
+        message: `Minimum Withdraw is $${minWithdraw.toFixed(2)} USDT`,
+      };
+    }
+
+    const maxWithdraw = Math.max(0, Number(config.maxWithdrawAmount ?? 0));
+    if (maxWithdraw > 0 && amount > maxWithdraw) {
+      return {
+        ok: false,
+        message: `Maximum Withdraw is $${maxWithdraw.toFixed(2)} USDT`,
+      };
+    }
+
     if (amount > state.totalBalance) {
       return { ok: false, message: 'Insufficient USDT balance.' };
     }

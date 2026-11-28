@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock, ShieldCheck, Wallet, XCircle } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Lock,
+  ShieldCheck,
+  Unlock,
+  Wallet,
+  XCircle,
+} from 'lucide-react';
 import { deriveTelegramHandle } from '../../data/defaultEarnMoneyState';
 import type { EarnMoneyConfig, EarnMoneyState } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
@@ -26,26 +35,58 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
     null
   );
 
-  const minWithdraw = config.minWithdrawAmount;
+  // Read all withdraw settings LIVE from Admin Panel Database config
+  const requiredAds = Math.max(0, Math.floor(Number(config.withdrawRequiredAds ?? 0)));
+  const minWithdraw = Math.max(0, Number(config.minWithdrawAmount ?? 0));
+  const maxWithdraw = Math.max(0, Number(config.maxWithdrawAmount ?? 0));
+  const feePercent = Math.min(100, Math.max(0, Number(config.withdrawFeePercent ?? 0)));
+
+  const adsWatchedToday = Math.max(0, Number(state.dailyAdsCompleted || 0));
+  const isLocked = requiredAds > 0 && adsWatchedToday < requiredAds;
+  const adsProgressPct =
+    requiredAds > 0 ? Math.min(100, Math.round((adsWatchedToday / requiredAds) * 100)) : 100;
+
   const channel1Handle = deriveTelegramHandle(config.channel1Url, '@Channel1');
   const channel2Handle = deriveTelegramHandle(config.channel2Url, '@Channel2');
   const meetsMinimum = state.totalBalance >= minWithdraw;
-  const meetsReferrals = state.referralsInvited >= 5;
+
+  const parsedPreviewAmount = Number.parseFloat(amountInput);
+  const hasValidPreview = Number.isFinite(parsedPreviewAmount) && parsedPreviewAmount > 0;
+  const previewFeeUsdt = hasValidPreview ? (parsedPreviewAmount * feePercent) / 100 : 0;
+  const previewNetUsdt = hasValidPreview ? Math.max(0, parsedPreviewAmount - previewFeeUsdt) : 0;
 
   const handleSetMax = () => {
-    setAmountInput(state.totalBalance.toFixed(2));
+    const capped =
+      maxWithdraw > 0 ? Math.min(state.totalBalance, maxWithdraw) : state.totalBalance;
+    setAmountInput(capped.toFixed(2));
     setFeedback(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLocked) {
+      setFeedback({
+        type: 'error',
+        text: `Withdraw is LOCKED. Progress: ${adsWatchedToday} / ${requiredAds} Ads Watched.`,
+      });
+      return;
+    }
+
     const numericAmount = Number.parseFloat(amountInput);
     const trimmedAddr = walletAddress.trim();
 
     if (!Number.isFinite(numericAmount) || numericAmount < minWithdraw) {
       setFeedback({
         type: 'error',
-        text: `Minimum withdrawal amount is ${minWithdraw.toFixed(2)} USDT.`,
+        text: `Minimum Withdraw is $${minWithdraw.toFixed(2)} USDT`,
+      });
+      return;
+    }
+
+    if (maxWithdraw > 0 && numericAmount > maxWithdraw) {
+      setFeedback({
+        type: 'error',
+        text: `Maximum Withdraw is $${maxWithdraw.toFixed(2)} USDT`,
       });
       return;
     }
@@ -98,21 +139,80 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
           <span className="inline-block rounded-xl bg-emerald-50 px-3 py-1.5 font-mono text-xs font-extrabold text-[#00944A]">
             BEP20 (BSC)
           </span>
-          <p className="mt-1 text-[11px] font-medium text-slate-400">1 USDT = $1.00 USD</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-400">
+            Fee: {feePercent.toFixed(feePercent % 1 === 0 ? 0 : 2)}% &middot; Min $
+            {minWithdraw.toFixed(2)}
+          </p>
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         {/* RULES Card */}
         <section className="mf-card-3d space-y-3 p-5">
-          <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-[#111827]">
-            RULES
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-[#111827]">
+              RULES
+            </h2>
+            <span
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${
+                isLocked ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-[#00944A]'
+              }`}
+            >
+              {isLocked ? (
+                <>
+                  <Lock className="h-3 w-3" />
+                  <span>LOCKED</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="h-3 w-3" />
+                  <span>UNLOCKED</span>
+                </>
+              )}
+            </span>
+          </div>
 
           <div className="space-y-2.5">
+            {/* Ads Unlock Rule */}
+            <div className="rounded-2xl bg-[#F6F8FA] px-3.5 py-3 text-xs space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#111827]">
+                  {requiredAds > 0
+                    ? `Required Ads (${requiredAds} Today)`
+                    : 'Daily Ads Requirement'}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 font-extrabold tabular-nums ${
+                    isLocked ? 'text-amber-600' : 'text-[#00944A]'
+                  }`}
+                >
+                  {isLocked ? (
+                    <Lock className="h-3.5 w-3.5" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  <span>
+                    {requiredAds > 0
+                      ? `${adsWatchedToday} / ${requiredAds} Ads Watched`
+                      : 'Unlocked'}
+                  </span>
+                </span>
+              </div>
+              {requiredAds > 0 && (
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      isLocked ? 'bg-amber-500' : 'bg-[#00944A]'
+                    }`}
+                    style={{ width: `${adsProgressPct}%` }}
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center justify-between rounded-2xl bg-[#F6F8FA] px-3.5 py-2.5 text-xs">
               <span className="font-bold text-[#111827]">
-                Minimum {minWithdraw.toFixed(2)} USDT
+                Minimum ${minWithdraw.toFixed(2)} USDT
               </span>
               <span
                 className={`inline-flex items-center gap-1 font-extrabold ${
@@ -129,20 +229,16 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between rounded-2xl bg-[#F6F8FA] px-3.5 py-2.5 text-xs">
-              <span className="font-bold text-[#111827]">5 Valid Referrals</span>
-              <span
-                className={`inline-flex items-center gap-1 font-extrabold tabular-nums ${
-                  meetsReferrals ? 'text-[#00944A]' : 'text-amber-600'
-                }`}
-              >
-                {meetsReferrals ? (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Clock className="h-3.5 w-3.5" />
-                )}
-                <span>
-                  {meetsReferrals ? 'Completed' : 'Pending'} ({state.referralsInvited}/5)
-                </span>
+              <span className="font-bold text-[#111827]">Maximum Limit</span>
+              <span className="font-extrabold text-[#111827] tabular-nums">
+                {maxWithdraw > 0 ? `$${maxWithdraw.toFixed(2)} USDT` : 'Unlimited'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl bg-[#F6F8FA] px-3.5 py-2.5 text-xs">
+              <span className="font-bold text-[#111827]">Withdraw Fee</span>
+              <span className="font-extrabold text-[#00944A] tabular-nums">
+                {feePercent > 0 ? `${feePercent}%` : '0% (Free)'}
               </span>
             </div>
 
@@ -200,24 +296,57 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
         {/* Request Card */}
         <section className="mf-card-3d p-5">
-          <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-[#111827]">
-            Request
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-[#111827]">
+              Request
+            </h2>
+            {isLocked && (
+              <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-600">
+                <Lock className="h-3.5 w-3.5" />
+                <span>LOCKED</span>
+              </span>
+            )}
+          </div>
 
-          <form onSubmit={(e) => void handleSubmit(e)} className="mt-3.5 space-y-3.5">
+          {isLocked && (
+            <div className="mt-3.5 rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-xs font-extrabold text-amber-800">
+                <span className="flex items-center gap-1.5">
+                  <Lock className="h-4 w-4 shrink-0 text-amber-600" />
+                  <span>LOCKED — Watch Ads to Unlock</span>
+                </span>
+                <span className="tabular-nums">
+                  {adsWatchedToday} / {requiredAds} Ads Watched
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-amber-200/70">
+                <div
+                  className="h-full rounded-full bg-amber-500 transition-all duration-300"
+                  style={{ width: `${adsProgressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <form noValidate onSubmit={(e) => void handleSubmit(e)} className="mt-3.5 space-y-3.5">
             <div>
-              <label
-                htmlFor="withdraw-amount"
-                className="mb-1.5 block text-xs font-bold text-slate-600"
-              >
-                Amount (USDT)
-              </label>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label
+                  htmlFor="withdraw-amount"
+                  className="block text-xs font-bold text-slate-600"
+                >
+                  Amount (USDT)
+                </label>
+                <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                  Min ${minWithdraw.toFixed(2)}
+                  {maxWithdraw > 0 ? ` · Max $${maxWithdraw.toFixed(2)}` : ''}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   id="withdraw-amount"
                   type="number"
                   step="0.01"
-                  min={minWithdraw.toFixed(2)}
                   placeholder={minWithdraw.toFixed(2)}
                   value={amountInput}
                   onChange={(e) => {
@@ -234,6 +363,14 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                   MAX
                 </button>
               </div>
+              {hasValidPreview && (
+                <p className="mt-1.5 text-[11px] font-semibold text-slate-500 tabular-nums">
+                  Fee ({feePercent}%): -{previewFeeUsdt.toFixed(4)} USDT &middot; Net Receive:{' '}
+                  <span className="font-bold text-[#00944A]">
+                    {previewNetUsdt.toFixed(4)} USDT
+                  </span>
+                </p>
+              )}
             </div>
 
             <div>
@@ -276,12 +413,25 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
             <button
               type="submit"
-              disabled={submitting}
-              className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center px-4 py-3 text-sm font-extrabold"
+              disabled={submitting || isLocked}
+              className={`flex min-h-[48px] w-full items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold ${
+                isLocked
+                  ? 'rounded-2xl border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'mf-btn-green-3d'
+              }`}
             >
-              {submitting
-                ? 'Submitting...'
-                : `Submit Request (${minWithdraw.toFixed(2)} USDT min)`}
+              {isLocked ? (
+                <>
+                  <Lock className="h-4 w-4" />
+                  <span>
+                    LOCKED ({adsWatchedToday} / {requiredAds} Ads Watched)
+                  </span>
+                </>
+              ) : submitting ? (
+                <span>Submitting...</span>
+              ) : (
+                <span>Submit Request (${minWithdraw.toFixed(2)} USDT min)</span>
+              )}
             </button>
           </form>
         </section>
@@ -327,6 +477,9 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                     </p>
                     <p className="truncate font-mono text-[11px] font-medium text-slate-500">
                       {item.address} &middot; {item.date}
+                      {item.feePercent && item.feePercent > 0 && item.netAmountUsdt !== undefined
+                        ? ` · Net ${item.netAmountUsdt.toFixed(2)} (${item.feePercent}% fee)`
+                        : ''}
                     </p>
                   </div>
                 </div>

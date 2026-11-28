@@ -33,6 +33,9 @@ export interface EarnMoneyConfig {
   channel1Url: string;
   channel2Url: string;
   minWithdrawAmount: number;
+  maxWithdrawAmount: number;
+  withdrawRequiredAds: number;
+  withdrawFeePercent: number;
   supportUsername: string;
 
   // 1. Refer System Settings
@@ -83,6 +86,9 @@ export interface ReferralItem {
 export interface WithdrawalItem {
   id: string;
   amountUsdt: number;
+  feePercent?: number;
+  feeUsdt?: number;
+  netAmountUsdt?: number;
   address: string;
   date: string;
   status: 'Pending' | 'Completed' | 'Rejected';

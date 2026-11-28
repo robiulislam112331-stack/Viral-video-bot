@@ -60,7 +60,10 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   welcomeSubtitle: 'Join our 2 official channels to stay updated.',
   channel1Url: 'https://t.me/waincomesite',
   channel2Url: 'https://t.me/premiumapps5462',
-  minWithdrawAmount: 0.8,
+  minWithdrawAmount: 1,
+  maxWithdrawAmount: 100,
+  withdrawRequiredAds: 10,
+  withdrawFeePercent: 0,
   supportUsername: '@waincomesite',
 
   // 1. Refer System Settings
@@ -77,7 +80,7 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   premiumAdsBudget: 100,
   perAdViewReward: 0.01,
   perAdClickReward: 0.02,
-  dailyAdsLimitPerUser: 20,
+  dailyAdsLimitPerUser: 100,
   adsSlotPriceForAdvertiser: 5,
   monetagLink: DEFAULT_MONETAG_LINK,
 
@@ -163,7 +166,7 @@ export function createInitialEarnMoneyState(
   userAvatar: string,
   config: EarnMoneyConfig = DEFAULT_EARNMONEY_CONFIG
 ): EarnMoneyState {
-  const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || 20);
+  const dailyTotal = Math.max(1, Number(config.dailyAdsLimitPerUser) || DEFAULT_EARNMONEY_CONFIG.dailyAdsLimitPerUser);
   const ceiling = Number((dailyTotal * (config.perAdViewReward || 0.01)).toFixed(4));
   const instantRefer =
     config.referMinAdsWatched === 0 &&

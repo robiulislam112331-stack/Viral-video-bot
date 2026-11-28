@@ -4,7 +4,10 @@
   "welcomeSubtitle": "Join our 2 official channels to stay updated.",
   "channel1Url": "https://t.me/waincomesite",
   "channel2Url": "https://t.me/premiumapps5462",
-  "minWithdrawAmount": 0.8,
+  "minWithdrawAmount": 1,
+  "maxWithdrawAmount": 100,
+  "withdrawRequiredAds": 10,
+  "withdrawFeePercent": 0,
   "supportUsername": "@waincomesite",
   "referBonusAmount": 0.1,
   "referMinAdsWatched": 0,
@@ -17,7 +20,7 @@
   "premiumAdsBudget": 100,
   "perAdViewReward": 0.01,
   "perAdClickReward": 0.02,
-  "dailyAdsLimitPerUser": 20,
+  "dailyAdsLimitPerUser": 100,
   "adsSlotPriceForAdvertiser": 5,
   "monetagLink": "<script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>",
   "maintenanceMode": false,
@@ -36,5 +39,5 @@
       "createdBy": "admin"
     }
   ],
-  "updatedAt": "2026-11-28T09:32:28.909Z"
+  "updatedAt": "2026-11-28T09:49:28.733Z"
 }
