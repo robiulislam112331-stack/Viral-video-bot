@@ -21,14 +21,20 @@ import type {
   EarnMoneyTab,
   ModalType,
 } from '../../types/earnMoney';
-import { openExternalTelegramLink, triggerMonetagAd } from '../../utils/telegram';
+import {
+  getMonetagDirectUrl,
+  openExternalTelegramLink,
+  triggerMonetagAd,
+} from '../../utils/telegram';
 
 interface ModalsProps {
   activeModal: ModalType;
+  activeSlotId?: number;
   state: EarnMoneyState;
   config: EarnMoneyConfig;
   onClose: () => void;
-  onClaimAdSlot: (mode?: 'view' | 'click') => void;
+  onClaimAdSlot: (mode?: 'view' | 'click', slotId?: number) => void;
+  onSelectAdSlot?: (slotId: number) => void;
   onAddTask: (task: Omit<BonusTaskItem, 'id' | 'completed'>) => void;
   onNavigateTab: (tab: EarnMoneyTab, scrollToHistory?: boolean) => void;
   onOpenModal: (modal: ModalType) => void;
@@ -37,10 +43,12 @@ interface ModalsProps {
 
 export const Modals: React.FC<ModalsProps> = ({
   activeModal,
+  activeSlotId,
   state,
   config,
   onClose,
   onClaimAdSlot,
+  onSelectAdSlot,
   onAddTask,
   onNavigateTab,
   onOpenModal,
@@ -50,8 +58,18 @@ export const Modals: React.FC<ModalsProps> = ({
   const dailyTotal = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
   const dailyCeiling = Number((dailyTotal * config.perAdViewReward).toFixed(4));
   const adsSlotEmpty = !config.premiumAdsEnabled || config.premiumAdsBudget <= 0;
-  const [adSecondsLeft, setAdSecondsLeft] = useState(5);
+  const currentSlotId = Math.min(
+    dailyTotal,
+    Math.max(1, activeSlotId ?? state.nextSlotNumber ?? state.dailyAdsCompleted + 1)
+  );
+  const currentSlotClaim = state.adSlotClaims?.[String(currentSlotId)];
+  const viewClaimedForSlot = Boolean(currentSlotClaim?.view_reward_claimed);
+  const clickClaimedForSlot = Boolean(currentSlotClaim?.click_bonus_claimed);
+
+  const [adSecondsLeft, setAdSecondsLeft] = useState(15);
   const [adStarted, setAdStarted] = useState(false);
+  const [adLoading, setAdLoading] = useState(false);
+  const [clickBonusVerifying, setClickBonusVerifying] = useState(false);
 
   const [supportMsg, setSupportMsg] = useState('');
   const [supportSent, setSupportSent] = useState(false);
@@ -63,11 +81,23 @@ export const Modals: React.FC<ModalsProps> = ({
 
   useEffect(() => {
     if (activeModal === 'ad_watch') {
-      setAdSecondsLeft(5);
-      setAdStarted(true);
-      void triggerMonetagAd();
+      setClickBonusVerifying(false);
+      if (viewClaimedForSlot) {
+        setAdSecondsLeft(0);
+        setAdLoading(false);
+        setAdStarted(true);
+      } else {
+        setAdSecondsLeft(15);
+        setAdLoading(true);
+        setAdStarted(true);
+        void triggerMonetagAd(config.monetagLink).finally(() => {
+          setAdLoading(false);
+        });
+      }
     } else {
       setAdStarted(false);
+      setAdLoading(false);
+      setClickBonusVerifying(false);
     }
 
     if (activeModal !== 'customer_service') {
@@ -77,7 +107,7 @@ export const Modals: React.FC<ModalsProps> = ({
     if (activeModal !== 'add_task') {
       setTaskError('');
     }
-  }, [activeModal]);
+  }, [activeModal, currentSlotId]);
 
   useEffect(() => {
     if (activeModal !== 'ad_watch' || !adStarted || adSecondsLeft <= 0) return;
@@ -86,6 +116,38 @@ export const Modals: React.FC<ModalsProps> = ({
     }, 1000);
     return () => window.clearInterval(timer);
   }, [activeModal, adStarted, adSecondsLeft]);
+
+  useEffect(() => {
+    if (activeModal !== 'ad_watch' || !clickBonusVerifying || clickClaimedForSlot) return;
+
+    let claimed = false;
+    const finalizeClickBonus = () => {
+      if (claimed) return;
+      claimed = true;
+      setClickBonusVerifying(false);
+      onClaimAdSlot('click', currentSlotId);
+    };
+
+    const handleReturn = () => {
+      if (document.visibilityState === 'visible') {
+        window.setTimeout(finalizeClickBonus, 400);
+      }
+    };
+
+    const handleFocus = () => {
+      window.setTimeout(finalizeClickBonus, 400);
+    };
+
+    document.addEventListener('visibilitychange', handleReturn);
+    window.addEventListener('focus', handleFocus);
+    const fallbackTimer = window.setTimeout(finalizeClickBonus, 2600);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturn);
+      window.removeEventListener('focus', handleFocus);
+      window.clearTimeout(fallbackTimer);
+    };
+  }, [activeModal, clickBonusVerifying, clickClaimedForSlot, currentSlotId, onClaimAdSlot]);
 
   if (!activeModal) return null;
 
@@ -155,7 +217,7 @@ export const Modals: React.FC<ModalsProps> = ({
               </span>
               <div>
                 <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                  Premium Ad Slot #{Math.min(dailyTotal, state.dailyAdsCompleted + 1)}
+                  Premium Ad Slot #{currentSlotId}
                 </h3>
                 <p className="text-xs font-medium text-slate-500">
                   View: +{config.perAdViewReward.toFixed(4)} USDT &middot; Click: +
@@ -179,13 +241,13 @@ export const Modals: React.FC<ModalsProps> = ({
                   {adSecondsLeft > 0 ? (
                     <>
                       <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Verifying Sponsored Ad
+                        {adLoading ? 'Loading Ad... Please wait' : 'Verifying Sponsored Ad'}
                       </p>
                       <p className="mt-2 font-display text-4xl font-extrabold text-[#00944A] tabular-nums">
                         {adSecondsLeft}s
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Keep this window open until verification finishes.
+                        Keep this window open. Closing early cancels your reward.
                       </p>
                     </>
                   ) : (
@@ -205,32 +267,87 @@ export const Modals: React.FC<ModalsProps> = ({
                 <div className="space-y-2.5">
                   <button
                     type="button"
-                    disabled={adSecondsLeft > 0}
+                    disabled={adSecondsLeft > 0 || viewClaimedForSlot}
                     onClick={() => {
-                      onClaimAdSlot('view');
+                      onClaimAdSlot('view', currentSlotId);
                       onClose();
                     }}
-                    className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold"
+                    className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold disabled:opacity-60"
                   >
                     <span>
                       {adSecondsLeft > 0
-                        ? `Please Wait (${adSecondsLeft}s)`
-                        : `Claim +${config.perAdViewReward.toFixed(4)} USDT`}
+                        ? `Please watch ad... ${adSecondsLeft}s`
+                        : viewClaimedForSlot
+                          ? 'View Reward Claimed ✅'
+                          : `Claim +${config.perAdViewReward.toFixed(4)} USDT`}
                     </span>
                   </button>
 
-                  {adSecondsLeft <= 0 && config.perAdClickReward > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClaimAdSlot('click');
-                        onClose();
-                      }}
-                      className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
-                    >
-                      <span>Ad Click Bonus (+{config.perAdClickReward.toFixed(4)} USDT)</span>
-                    </button>
-                  )}
+                  {adSecondsLeft <= 0 && config.perAdClickReward > 0 && (() => {
+                    const directUrl = getMonetagDirectUrl(config.monetagLink);
+                    const startClickBonus = () => {
+                      if (clickClaimedForSlot || clickBonusVerifying) return;
+                      setClickBonusVerifying(true);
+                      if (!directUrl) {
+                        void triggerMonetagAd(config.monetagLink);
+                      } else {
+                        openExternalTelegramLink(directUrl);
+                      }
+                    };
+
+                    if (clickClaimedForSlot) {
+                      return (
+                        <button
+                          type="button"
+                          disabled
+                          className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold opacity-60"
+                        >
+                          <span>Click Bonus Claimed ✅</span>
+                        </button>
+                      );
+                    }
+
+                    if (clickBonusVerifying) {
+                      return (
+                        <button
+                          type="button"
+                          disabled
+                          className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold opacity-75"
+                        >
+                          <span>Verifying Ad Click... Please wait</span>
+                        </button>
+                      );
+                    }
+
+                    if (directUrl) {
+                      return (
+                        <a
+                          href={directUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            if (openExternalTelegramLink(directUrl)) {
+                              e.preventDefault();
+                            }
+                            startClickBonus();
+                          }}
+                          className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
+                        >
+                          <span>Ad Click Bonus (+{config.perAdClickReward.toFixed(4)} USDT)</span>
+                        </a>
+                      );
+                    }
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={startClickBonus}
+                        className="mf-btn-outline-3d flex min-h-[44px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
+                      >
+                        <span>Ad Click Bonus (+{config.perAdClickReward.toFixed(4)} USDT)</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </>
             )}
@@ -253,15 +370,24 @@ export const Modals: React.FC<ModalsProps> = ({
 
             <div className="grid max-h-[340px] grid-cols-4 gap-2 overflow-y-auto pr-1">
               {slots.map((slotNum) => {
-                const isDone = slotNum <= state.dailyAdsCompleted;
-                const isNext = slotNum === state.nextSlotNumber;
+                const slotClaim = state.adSlotClaims?.[String(slotNum)];
+                const isDone = Boolean(slotClaim?.view_reward_claimed) || slotNum <= state.dailyAdsCompleted;
+                const isNext = !isDone && slotNum === state.nextSlotNumber;
+                const canOpenClickBonus = isDone && !slotClaim?.click_bonus_claimed && config.perAdClickReward > 0;
+                const clickable = !adsSlotEmpty && (isNext || canOpenClickBonus);
+
                 return (
                   <button
                     key={slotNum}
                     type="button"
-                    disabled={!isNext}
+                    disabled={!clickable}
                     onClick={() => {
-                      if (isNext) onOpenModal('ad_watch');
+                      if (!clickable) return;
+                      if (onSelectAdSlot) {
+                        onSelectAdSlot(slotNum);
+                      } else {
+                        onOpenModal('ad_watch');
+                      }
                     }}
                     className={`flex flex-col items-center justify-center rounded-2xl px-2 py-2.5 text-center transition-all ${
                       isNext

@@ -19,6 +19,7 @@
   "perAdClickReward": 0.02,
   "dailyAdsLimitPerUser": 20,
   "adsSlotPriceForAdvertiser": 5,
+  "monetagLink": "<script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>",
   "maintenanceMode": false,
   "maintenanceMessage": "Bot is under maintenance. New features coming soon. Please try again later.",
   "maintenanceAdminId": "",
@@ -35,5 +36,5 @@
       "createdBy": "admin"
     }
   ],
-  "updatedAt": "2026-11-28T09:01:07.809Z"
+  "updatedAt": "2026-11-28T09:32:28.909Z"
 }

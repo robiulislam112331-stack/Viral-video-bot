@@ -51,6 +51,9 @@ export function isTaskCompletedForUser(
   return Boolean(task.completed);
 }
 
+export const DEFAULT_MONETAG_LINK =
+  "<script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script>";
+
 export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   botName: 'Earn Money',
   welcomeTitle: 'Welcome to Earn Money',
@@ -76,6 +79,7 @@ export const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   perAdClickReward: 0.02,
   dailyAdsLimitPerUser: 20,
   adsSlotPriceForAdvertiser: 5,
+  monetagLink: DEFAULT_MONETAG_LINK,
 
   // 3. Maintenance Mode Settings
   maintenanceMode: false,
@@ -190,6 +194,7 @@ export function createInitialEarnMoneyState(
     activateAdsDone: 0,
     completedTaskIds: [],
     taskCompletions: {},
+    adSlotClaims: {},
     bonusTasks: config.tasks
       .filter((t) => t.active !== false)
       .map((t) => {

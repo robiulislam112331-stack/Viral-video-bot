@@ -14,11 +14,13 @@ import type {
   VideoStatus,
 } from './src/types.ts';
 import {
+  DEFAULT_MONETAG_LINK,
   isTaskCompletedForUser,
   normalizeTaskType,
 } from './src/data/defaultEarnMoneyState.ts';
 import type {
   AdminWithdrawalRecord,
+  AdSlotClaimRecord,
   BonusTaskItem,
   EarnMoneyConfig,
   EarnMoneyState,
@@ -35,6 +37,7 @@ const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const STORE_PATH = path.resolve(DATA_DIR, 'cinevault_store.json');
 const EARNMONEY_PATH = path.resolve(DATA_DIR, 'earnmoney_users.json');
 const EARNMONEY_CONFIG_PATH = path.resolve(DATA_DIR, 'earnmoney_config.json');
+const EARNMONEY_AD_SLOTS_PATH = path.resolve(DATA_DIR, 'earnmoney_ad_slots.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -262,6 +265,7 @@ const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
   perAdClickReward: 0.02,
   dailyAdsLimitPerUser: 20,
   adsSlotPriceForAdvertiser: 5,
+  monetagLink: DEFAULT_MONETAG_LINK,
 
   maintenanceMode: false,
   maintenanceMessage:
@@ -376,6 +380,10 @@ function loadEarnMoneyConfig(): EarnMoneyConfig {
         parsed.adsSlotPriceForAdvertiser,
         DEFAULT_EARNMONEY_CONFIG.adsSlotPriceForAdvertiser
       ),
+      monetagLink:
+        typeof parsed.monetagLink === 'string' && parsed.monetagLink.trim()
+          ? parsed.monetagLink.trim()
+          : DEFAULT_EARNMONEY_CONFIG.monetagLink,
 
       maintenanceMode: Boolean(parsed.maintenanceMode),
       maintenanceMessage:
@@ -464,10 +472,40 @@ function createZeroEarnMoneyUser(
     activateAdsDone: 0,
     completedTaskIds: [],
     taskCompletions: {},
+    adSlotClaims: {},
     bonusTasks: [],
     referralsList: [],
     withdrawHistory: [],
   };
+}
+
+function loadAdSlotClaims(): AdSlotClaimRecord[] {
+  if (!fs.existsSync(EARNMONEY_AD_SLOTS_PATH)) return [];
+  try {
+    const raw = fs.readFileSync(EARNMONEY_AD_SLOTS_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as AdSlotClaimRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAdSlotClaims(records: AdSlotClaimRecord[]): void {
+  const tempPath = `${EARNMONEY_AD_SLOTS_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(records, null, 2), 'utf-8');
+  fs.renameSync(tempPath, EARNMONEY_AD_SLOTS_PATH);
+}
+
+let adSlotClaimsList: AdSlotClaimRecord[] = loadAdSlotClaims();
+
+function getUserAdSlotClaimsMap(uid: string): Record<string, AdSlotClaimRecord> {
+  const out: Record<string, AdSlotClaimRecord> = {};
+  for (const rec of adSlotClaimsList) {
+    if (rec.user_id === uid) {
+      out[String(rec.slot_id)] = rec;
+    }
+  }
+  return out;
 }
 
 function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): ServerEarnMoneyState {
@@ -517,7 +555,9 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
 
   const dailyTotal = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
   const dailyCeiling = Number((dailyTotal * (earnMoneyConfig.perAdViewReward || 0.01)).toFixed(4));
-  const dailyCompleted = Math.min(dailyTotal, user.dailyAdsCompleted || 0);
+  const adSlotClaims = getUserAdSlotClaimsMap(user.userId);
+  const claimedSlotCount = Object.values(adSlotClaims).filter((r) => r.view_reward_claimed).length;
+  const dailyCompleted = Math.min(dailyTotal, Math.max(user.dailyAdsCompleted || 0, claimedSlotCount));
 
   const syncedBase: ServerEarnMoneyState = {
     ...user,
@@ -528,6 +568,7 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
     dailyCeilingUsdt: dailyCeiling,
     completedTaskIds: Array.from(completedSet),
     taskCompletions,
+    adSlotClaims,
     bonusTasks: [...adminTasks, ...userCustomTasks],
     referralsList: Array.isArray(user.referralsList) ? user.referralsList : [],
     withdrawHistory: Array.isArray(user.withdrawHistory) ? user.withdrawHistory : [],
@@ -557,6 +598,21 @@ function saveEarnMoneyUsers(users: EarnMoneyUserMap): void {
 }
 
 let earnMoneyUsers: EarnMoneyUserMap = loadEarnMoneyUsers();
+
+function isValidMonetagInput(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  if (/^\d{4,16}$/.test(trimmed)) return true;
+  if (isSafeUrl(trimmed, false)) return true;
+  if (/^<script\b[^>]*>\s*<\/script>$/i.test(trimmed)) {
+    const srcMatch = trimmed.match(/src\s*=\s*['"]?([^'"\s>]+)['"]?/i);
+    const zoneMatch = trimmed.match(/data-zone\s*=\s*['"]?(\d{4,16})['"]?/i);
+    if (!srcMatch) return false;
+    const srcUrl = srcMatch[1].startsWith('//') ? `https:${srcMatch[1]}` : srcMatch[1];
+    return isSafeUrl(srcUrl, false) && Boolean(zoneMatch || /libtl\.com|monetag/i.test(srcUrl));
+  }
+  return false;
+}
 
 // --- Security Helpers ---
 
@@ -1058,8 +1114,46 @@ async function startServer() {
     }
 
     const dailyLimit = Math.max(1, earnMoneyConfig.dailyAdsLimitPerUser || 20);
-    if (user.dailyAdsCompleted >= dailyLimit) {
-      res.status(400).json({ error: `Daily ${dailyLimit} ad slots already completed.` });
+    const requestedSlotRaw = Number(req.body?.slotId);
+    const defaultNextSlot = Math.min(dailyLimit, (user.dailyAdsCompleted || 0) + 1);
+    const slotId =
+      Number.isInteger(requestedSlotRaw) && requestedSlotRaw >= 1 && requestedSlotRaw <= dailyLimit
+        ? requestedSlotRaw
+        : defaultNextSlot;
+
+    let slotRecord = adSlotClaimsList.find(
+      (r) => r.user_id === uid && r.slot_id === slotId
+    );
+    if (!slotRecord) {
+      slotRecord = {
+        user_id: uid,
+        slot_id: slotId,
+        view_reward_claimed: false,
+        click_bonus_claimed: false,
+        updated_at: new Date().toISOString(),
+      };
+      adSlotClaimsList.push(slotRecord);
+    }
+
+    if (mode === 'view') {
+      if (slotRecord.view_reward_claimed) {
+        res.status(400).json({
+          error: `View reward already claimed for Slot #${slotId}.`,
+          state: syncUserWithConfig(user),
+          config: earnMoneyConfig,
+        });
+        return;
+      }
+      if (user.dailyAdsCompleted >= dailyLimit) {
+        res.status(400).json({ error: `Daily ${dailyLimit} ad slots already completed.` });
+        return;
+      }
+    } else if (slotRecord.click_bonus_claimed) {
+      res.status(400).json({
+        error: `Ad click bonus already claimed for Slot #${slotId}.`,
+        state: syncUserWithConfig(user),
+        config: earnMoneyConfig,
+      });
       return;
     }
 
@@ -1078,18 +1172,31 @@ async function startServer() {
     earnMoneyConfig.updatedAt = new Date().toISOString();
     saveEarnMoneyConfig(earnMoneyConfig);
 
+    if (mode === 'view') {
+      slotRecord.view_reward_claimed = true;
+      user.dailyAdsCompleted = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
+      user.dailyAdsTotal = dailyLimit;
+      user.nextSlotNumber = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
+      user.adsWatchedTotal += 1;
+      user.activateAdsDone = user.adsWatchedTotal;
+    } else {
+      slotRecord.click_bonus_claimed = true;
+    }
+    slotRecord.updated_at = new Date().toISOString();
+    saveAdSlotClaims(adSlotClaimsList);
+
     user.totalBalance = Number((user.totalBalance + reward).toFixed(4));
     user.totalIncome = Number((user.totalIncome + reward).toFixed(4));
-    user.dailyAdsCompleted = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
-    user.dailyAdsTotal = dailyLimit;
-    user.nextSlotNumber = Math.min(dailyLimit, user.dailyAdsCompleted + 1);
-    user.adsWatchedTotal += 1;
-    user.activateAdsDone = user.adsWatchedTotal;
 
     evaluateReferralProgressAndCredit(user);
     earnMoneyUsers[uid] = user;
     saveEarnMoneyUsers(earnMoneyUsers);
-    res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig, reward });
+    res.json({
+      state: syncUserWithConfig(user),
+      config: earnMoneyConfig,
+      reward,
+      slotClaim: slotRecord,
+    });
   });
 
   app.post('/api/earnmoney/tasks/complete', (req, res) => {
@@ -1958,6 +2065,10 @@ async function startServer() {
       body.adsSlotPriceForAdvertiser !== undefined
         ? Number(body.adsSlotPriceForAdvertiser)
         : earnMoneyConfig.adsSlotPriceForAdvertiser;
+    const monetagLink =
+      body.monetagLink !== undefined
+        ? String(body.monetagLink).trim().slice(0, 600)
+        : earnMoneyConfig.monetagLink;
 
     // 3. Maintenance Mode Settings
     const maintenanceMode =
@@ -1983,6 +2094,12 @@ async function startServer() {
     }
     if (!referLinkFormat || !isSafeUrl(referLinkFormat.replace(/\[USER_ID\]|\{USER_ID\}/gi, '12345'), false)) {
       res.status(400).json({ error: 'Refer Link Format must be a valid http/https URL.' });
+      return;
+    }
+    if (!isValidMonetagInput(monetagLink)) {
+      res.status(400).json({
+        error: 'Monetag Link must be a valid http/https URL, Zone ID, or Monetag SDK <script> tag.',
+      });
       return;
     }
     const nonNegativeNumbers = [
@@ -2041,6 +2158,7 @@ async function startServer() {
       perAdClickReward: Number(perAdClickReward.toFixed(4)),
       dailyAdsLimitPerUser: Math.floor(dailyAdsLimitPerUser),
       adsSlotPriceForAdvertiser: Number(adsSlotPriceForAdvertiser.toFixed(4)),
+      monetagLink,
 
       maintenanceMode,
       maintenanceMessage,

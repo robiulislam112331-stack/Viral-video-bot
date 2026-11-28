@@ -158,6 +158,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
   const [adsSlotPriceForAdvertiser, setAdsSlotPriceForAdvertiser] = useState(
     String(DEFAULT_EARNMONEY_CONFIG.adsSlotPriceForAdvertiser)
   );
+  const [monetagLink, setMonetagLink] = useState(DEFAULT_EARNMONEY_CONFIG.monetagLink);
   const [adsSavedMsg, setAdsSavedMsg] = useState<string | null>(null);
 
   const [savingSection, setSavingSection] = useState<string | null>(null);
@@ -212,6 +213,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
     setPerAdClickReward(String(cfg.perAdClickReward ?? 0.02));
     setDailyAdsLimitPerUser(String(cfg.dailyAdsLimitPerUser ?? 20));
     setAdsSlotPriceForAdvertiser(String(cfg.adsSlotPriceForAdvertiser ?? 5));
+    setMonetagLink(cfg.monetagLink || DEFAULT_EARNMONEY_CONFIG.monetagLink);
 
     setMaintenanceMode(Boolean(cfg.maintenanceMode));
     setMaintenanceMessage(cfg.maintenanceMessage || DEFAULT_EARNMONEY_CONFIG.maintenanceMessage);
@@ -382,6 +384,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
       perAdClickReward: Number.parseFloat(perAdClickReward),
       dailyAdsLimitPerUser: Number.parseInt(dailyAdsLimitPerUser || '20', 10),
       adsSlotPriceForAdvertiser: Number.parseFloat(adsSlotPriceForAdvertiser),
+      monetagLink: monetagLink.trim(),
     });
   };
 
@@ -1393,6 +1396,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ adminToken, onSetAdminTo
                       }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-sm text-white"
                     />
+                  </div>
+
+                  <div className="md:col-span-3">
+                    <label
+                      htmlFor="admin-monetag-link"
+                      className="block text-xs font-semibold text-zinc-300 mb-1.5"
+                    >
+                      Monetag Link / Zone Code
+                    </label>
+                    <input
+                      id="admin-monetag-link"
+                      type="text"
+                      required
+                      value={monetagLink}
+                      onChange={(e) => {
+                        setMonetagLink(e.target.value);
+                        setAdsSavedMsg(null);
+                      }}
+                      placeholder="<script src='//libtl.com/sdk.js' data-zone='12118221' data-sdk='show_12118221'></script> or https://..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070B09] border border-zinc-800 focus:border-emerald-500 outline-none font-mono text-xs text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Paste your Monetag SDK script tag, Zone ID, or Direct Ad URL. Updates live for all ad slots.
+                    </p>
                   </div>
                 </div>
 

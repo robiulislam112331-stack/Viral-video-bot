@@ -51,6 +51,7 @@ export interface EarnMoneyConfig {
   perAdClickReward: number;
   dailyAdsLimitPerUser: number;
   adsSlotPriceForAdvertiser: number;
+  monetagLink: string;
 
   // 3. Maintenance Mode Settings
   maintenanceMode: boolean;
@@ -59,6 +60,14 @@ export interface EarnMoneyConfig {
 
   tasks: BonusTaskItem[];
   updatedAt: string;
+}
+
+export interface AdSlotClaimRecord {
+  user_id: string;
+  slot_id: number;
+  view_reward_claimed: boolean;
+  click_bonus_claimed: boolean;
+  updated_at?: string;
 }
 
 export interface ReferralItem {
@@ -110,6 +119,7 @@ export interface EarnMoneyState {
   activateAdsDone: number;
   completedTaskIds?: string[];
   taskCompletions?: Record<string, number>;
+  adSlotClaims?: Record<string, AdSlotClaimRecord>;
   bonusTasks: BonusTaskItem[];
   referralsList: ReferralItem[];
   withdrawHistory: WithdrawalItem[];

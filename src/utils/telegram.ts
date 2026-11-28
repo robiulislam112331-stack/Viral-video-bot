@@ -28,7 +28,137 @@ interface TelegramWebAppWindow extends Window {
       };
     };
   };
-  show_12118221?: () => Promise<unknown>;
+  [key: string]: unknown;
+}
+
+export interface ParsedMonetagConfig {
+  mode: 'sdk' | 'url';
+  srcUrl?: string;
+  zoneId?: string;
+  sdkFunc?: string;
+  directUrl?: string;
+}
+
+export function parseMonetagConfig(rawInput?: string): ParsedMonetagConfig {
+  const raw = (rawInput || '').trim();
+  if (!raw) {
+    return {
+      mode: 'sdk',
+      srcUrl: 'https://libtl.com/sdk.js',
+      zoneId: '12118221',
+      sdkFunc: 'show_12118221',
+    };
+  }
+
+  if (/^\d{4,16}$/.test(raw)) {
+    return {
+      mode: 'sdk',
+      srcUrl: 'https://libtl.com/sdk.js',
+      zoneId: raw,
+      sdkFunc: `show_${raw}`,
+    };
+  }
+
+  if (/^https?:\/\//i.test(raw) && !raw.includes('<')) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        return { mode: 'url', directUrl: parsed.toString() };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  const zoneMatch = raw.match(/data-zone\s*=\s*['"]?(\d{4,16})['"]?/i);
+  const sdkMatch = raw.match(/data-sdk\s*=\s*['"]?([a-zA-Z0-9_]{3,64})['"]?/i);
+  const srcMatch = raw.match(/src\s*=\s*['"]?([^'"\s>]+)['"]?/i);
+
+  if (zoneMatch || sdkMatch || srcMatch) {
+    const zoneId = zoneMatch?.[1] || '12118221';
+    const sdkFunc = sdkMatch?.[1] || `show_${zoneId}`;
+    let srcUrl = srcMatch?.[1] || 'https://libtl.com/sdk.js';
+    if (srcUrl.startsWith('//')) {
+      srcUrl = `https:${srcUrl}`;
+    }
+    try {
+      const parsedSrc = new URL(srcUrl);
+      if (parsedSrc.protocol === 'https:' || parsedSrc.protocol === 'http:') {
+        return {
+          mode: 'sdk',
+          srcUrl: parsedSrc.toString(),
+          zoneId,
+          sdkFunc,
+        };
+      }
+    } catch {
+      // fallback below
+    }
+  }
+
+  return {
+    mode: 'sdk',
+    srcUrl: 'https://libtl.com/sdk.js',
+    zoneId: '12118221',
+    sdkFunc: 'show_12118221',
+  };
+}
+
+export function getMonetagDirectUrl(monetagLink?: string): string | null {
+  const parsed = parseMonetagConfig(monetagLink);
+  return parsed.mode === 'url' && parsed.directUrl ? parsed.directUrl : null;
+}
+
+function openDirectUrlInNewTab(url: string): void {
+  const win = window as unknown as TelegramWebAppWindow;
+  const tg = win.Telegram?.WebApp;
+  if (tg && typeof tg.openLink === 'function') {
+    try {
+      tg.openLink(url);
+      return;
+    } catch {
+      // fall through to anchor click
+    }
+  }
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
+
+function ensureMonetagSdkLoaded(parsed: ParsedMonetagConfig): Promise<void> {
+  if (parsed.mode !== 'sdk' || !parsed.srcUrl || !parsed.sdkFunc) {
+    return Promise.resolve();
+  }
+  const win = window as unknown as Record<string, unknown>;
+  if (typeof win[parsed.sdkFunc] === 'function') {
+    return Promise.resolve();
+  }
+
+  const existing = document.querySelector(
+    `script[data-zone="${parsed.zoneId}"][data-sdk="${parsed.sdkFunc}"]`
+  );
+  if (existing) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, 450);
+    });
+  }
+
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = parsed.srcUrl!;
+    script.async = true;
+    if (parsed.zoneId) script.setAttribute('data-zone', parsed.zoneId);
+    if (parsed.sdkFunc) script.setAttribute('data-sdk', parsed.sdkFunc);
+    script.onload = () => window.setTimeout(resolve, 150);
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+    window.setTimeout(resolve, 1200);
+  });
 }
 
 export const DEFAULT_AVATAR = '/src/assets/images/earnmoney_avatar_1795708537961.jpg';
@@ -60,7 +190,7 @@ function extractReferrerId(startParam?: string): string | undefined {
 }
 
 export function initTelegramWebApp(): TelegramUserInfo {
-  const win = window as TelegramWebAppWindow;
+  const win = window as unknown as TelegramWebAppWindow;
   const tg = win.Telegram?.WebApp;
 
   if (tg) {
@@ -91,7 +221,7 @@ export function initTelegramWebApp(): TelegramUserInfo {
 }
 
 export function openExternalTelegramLink(url: string): boolean {
-  const win = window as TelegramWebAppWindow;
+  const win = window as unknown as TelegramWebAppWindow;
   const tg = win.Telegram?.WebApp;
 
   if (tg && typeof tg.openTelegramLink === 'function' && url.startsWith('https://t.me/')) {
@@ -115,14 +245,24 @@ export function openExternalTelegramLink(url: string): boolean {
   return false;
 }
 
-export function triggerMonetagAd(): Promise<void> {
-  const win = window as TelegramWebAppWindow;
-  if (typeof win.show_12118221 === 'function') {
-    return Promise.resolve(win.show_12118221())
-      .then(() => undefined)
-      .catch(() => undefined);
+export async function triggerMonetagAd(monetagLink?: string): Promise<void> {
+  const parsed = parseMonetagConfig(monetagLink);
+  if (parsed.mode === 'url' && parsed.directUrl) {
+    openDirectUrlInNewTab(parsed.directUrl);
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    return;
   }
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, 600);
-  });
+
+  await ensureMonetagSdkLoaded(parsed);
+  const win = window as unknown as Record<string, unknown>;
+  const fn = parsed.sdkFunc ? win[parsed.sdkFunc] : undefined;
+  if (typeof fn === 'function') {
+    try {
+      await Promise.resolve((fn as () => Promise<unknown>)());
+      return;
+    } catch {
+      // fallback wait if ad blocked or closed
+    }
+  }
+  await new Promise((resolve) => window.setTimeout(resolve, 600));
 }

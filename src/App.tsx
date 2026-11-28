@@ -85,6 +85,7 @@ const EarnMoneyApp: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<EarnMoneyTab>('home');
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [activeAdSlotId, setActiveAdSlotId] = useState<number>(1);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [scrollHistoryQueued, setScrollHistoryQueued] = useState(false);
 
@@ -225,21 +226,42 @@ const EarnMoneyApp: React.FC = () => {
     }
   };
 
-  const handleClaimAdSlot = (mode: 'view' | 'click' = 'view') => {
+  const handleOpenModal = (modal: ModalType, slotId?: number) => {
+    if (modal === 'ad_watch') {
+      const dailyLimit = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
+      const nextSlot = Math.min(dailyLimit, Math.max(1, slotId ?? state.nextSlotNumber ?? state.dailyAdsCompleted + 1));
+      setActiveAdSlotId(nextSlot);
+    }
+    setActiveModal(modal);
+  };
+
+  const handleClaimAdSlot = (mode: 'view' | 'click' = 'view', slotId?: number) => {
     if (!config.premiumAdsEnabled || config.premiumAdsBudget <= 0) {
       notify('Premium Ads Slot Empty');
       return;
     }
     const dailyLimit = Math.max(1, config.dailyAdsLimitPerUser || state.dailyAdsTotal || 20);
-    if (state.dailyAdsCompleted >= dailyLimit) {
-      notify(`Daily ${dailyLimit} ad slots already completed.`);
+    const targetSlot = slotId ?? activeAdSlotId ?? Math.min(dailyLimit, state.dailyAdsCompleted + 1);
+    const existingClaim = state.adSlotClaims?.[String(targetSlot)];
+
+    if (mode === 'view') {
+      if (existingClaim?.view_reward_claimed) {
+        notify(`View reward already claimed for Slot #${targetSlot}.`);
+        return;
+      }
+      if (state.dailyAdsCompleted >= dailyLimit) {
+        notify(`Daily ${dailyLimit} ad slots already completed.`);
+        return;
+      }
+    } else if (existingClaim?.click_bonus_claimed) {
+      notify(`Ad click bonus already claimed for Slot #${targetSlot}.`);
       return;
     }
 
     fetch('/api/earnmoney/ad-claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: state.userId, mode }),
+      body: JSON.stringify({ uid: state.userId, mode, slotId: targetSlot }),
     })
       .then(async (res) => {
         const data = (await res.json()) as {
@@ -252,17 +274,21 @@ const EarnMoneyApp: React.FC = () => {
           setConfig(data.config);
           cacheConfig(data.config);
         }
-        if (!res.ok) {
-          notify(data.error || 'Unable to claim ad slot.');
-          return;
-        }
         if (data.state) {
           setState(data.state);
           cacheState(data.state);
         }
+        if (!res.ok) {
+          notify(data.error || 'Unable to claim ad slot.');
+          return;
+        }
         const credited =
           data.reward ?? (mode === 'click' ? config.perAdClickReward : config.perAdViewReward);
-        notify(`+${credited.toFixed(4)} USDT added to your balance!`);
+        notify(
+          mode === 'click'
+            ? `+${credited.toFixed(4)} USDT Ad Click Bonus added!`
+            : `+${credited.toFixed(4)} USDT added to your balance!`
+        );
       })
       .catch(() => {
         notify('Network error while claiming ad slot.');
@@ -562,7 +588,7 @@ const EarnMoneyApp: React.FC = () => {
             state={state}
             config={config}
             onNavigateTab={handleNavigateTab}
-            onOpenModal={setActiveModal}
+            onOpenModal={handleOpenModal}
           />
         )}
 
@@ -570,7 +596,7 @@ const EarnMoneyApp: React.FC = () => {
           <TasksView
             state={state}
             config={config}
-            onOpenModal={setActiveModal}
+            onOpenModal={handleOpenModal}
             onCompleteBonusTask={handleCompleteBonusTask}
           />
         )}
@@ -582,7 +608,7 @@ const EarnMoneyApp: React.FC = () => {
             onCopyInviteLink={handleCopyInviteLink}
             onJoinChannel={handleJoinChannel}
             onVerifyActivate={handleVerifyActivate}
-            onOpenModal={setActiveModal}
+            onOpenModal={handleOpenModal}
           />
         )}
 
@@ -599,13 +625,15 @@ const EarnMoneyApp: React.FC = () => {
 
       <Modals
         activeModal={activeModal}
+        activeSlotId={activeAdSlotId}
         state={state}
         config={config}
         onClose={() => setActiveModal(null)}
         onClaimAdSlot={handleClaimAdSlot}
+        onSelectAdSlot={(slotId) => handleOpenModal('ad_watch', slotId)}
         onAddTask={handleAddTask}
         onNavigateTab={handleNavigateTab}
-        onOpenModal={setActiveModal}
+        onOpenModal={handleOpenModal}
         onNotify={notify}
       />
 
