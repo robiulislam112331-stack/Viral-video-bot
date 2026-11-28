@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import express, { NextFunction, Request, Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -41,6 +41,7 @@ import {
   upsertUserToSupabase,
 } from './lib/supabaseDb.ts';
 
+dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -630,7 +631,8 @@ function syncUserWithConfig(user: ServerEarnMoneyState, now = Date.now()): Serve
 function isRealTelegramUserRecord(user: ServerEarnMoneyState | undefined): boolean {
   if (!user || !user.userId) return false;
   if (user.userName === 'Earn Money User' && !user.isTelegramUser) return false;
-  return Boolean(user.isTelegramUser);
+  if (user.userName === 'Preview Guest' && !user.isTelegramUser) return false;
+  return Boolean(user.isTelegramUser) || /^\d{4,20}$/.test(user.userId);
 }
 
 function loadEarnMoneyUsers(): EarnMoneyUserMap {
@@ -954,7 +956,11 @@ async function startServer() {
         fileId = await fetchTelegramProfilePhotoFileId(botToken, uid);
         if (fileId && user) {
           user.telegramPhotoFileId = fileId;
-          saveEarnMoneyUsers(earnMoneyUsers);
+          if (latestDbStatus.connected) {
+            await upsertUserToSupabase(user).catch(() => undefined);
+          } else {
+            saveEarnMoneyUsers(earnMoneyUsers);
+          }
         }
       }
       if (!fileId) {
@@ -1005,7 +1011,7 @@ async function startServer() {
         `/api/telegram/avatar/${uid}`,
         { isTelegramUser: true }
       );
-      saveEarnMoneyUsers(earnMoneyUsers);
+      await persistUserAndReferrer(earnMoneyUsers[uid]).catch(() => undefined);
     }
 
     const userRecord = earnMoneyUsers[uid];
@@ -1025,7 +1031,7 @@ async function startServer() {
       userRecord.joinedWaincomesite = wJoined;
       userRecord.joinedPremiumApps = pJoined;
       userRecord.lastActiveAt = new Date().toISOString();
-      saveEarnMoneyUsers(earnMoneyUsers);
+      await persistUserAndReferrer(userRecord).catch(() => undefined);
     }
 
     const missing: string[] = [];

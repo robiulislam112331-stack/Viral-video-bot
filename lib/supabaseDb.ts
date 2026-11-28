@@ -1,4 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 import type {
   AdSlotClaimRecord,
   BonusTaskItem,
@@ -18,14 +21,45 @@ export type DbUserRecord = EarnMoneyState & {
 let cachedKeySignature = '';
 let cachedClient: SupabaseClient | null = null;
 
+function readEnvFallback(): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const filename of ['.env', '.env.local', '.env.production']) {
+    const filePath = path.resolve(process.cwd(), filename);
+    if (fs.existsSync(filePath)) {
+      try {
+        const parsed = dotenv.parse(fs.readFileSync(filePath, 'utf-8'));
+        Object.assign(merged, parsed);
+      } catch {
+        // ignore unreadable env file
+      }
+    }
+  }
+  return merged;
+}
+
 function getSupabaseCredentials(): { url: string; key: string } {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-  const key = (
+  let url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  let key = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
     ''
   ).trim();
+
+  if (!url || !key) {
+    const fileEnv = readEnvFallback();
+    if (!url) {
+      url = (fileEnv.SUPABASE_URL || fileEnv.VITE_SUPABASE_URL || '').trim();
+    }
+    if (!key) {
+      key = (
+        fileEnv.SUPABASE_SERVICE_ROLE_KEY ||
+        fileEnv.SUPABASE_ANON_KEY ||
+        fileEnv.VITE_SUPABASE_ANON_KEY ||
+        ''
+      ).trim();
+    }
+  }
   return { url, key };
 }
 
@@ -61,7 +95,7 @@ export function getSupabaseClient(): SupabaseClient | null {
   return cachedClient;
 }
 
-const REQUIRED_TABLES = ['tasks', 'users', 'settings', 'withdraws', 'ads_config', 'ad_slot_claims'] as const;
+const REQUIRED_TABLES = ['tasks', 'users', 'settings', 'withdraws', 'ads_config'] as const;
 
 export async function checkSupabaseConnection(): Promise<DatabaseConnectionStatus> {
   if (!isSupabaseConfigured()) {
@@ -196,7 +230,11 @@ export async function loadConfigFromSupabase(
   const tasksRows = Array.isArray(tasksRes.data) ? (tasksRes.data as Record<string, unknown>[]) : [];
   const tasks: BonusTaskItem[] = tasksRows.map((row) => {
     const taskType = normalizeTaskTypeLocal(
-      typeof row.task_type === 'string' ? row.task_type : undefined,
+      typeof row.task_type === 'string'
+        ? row.task_type
+        : typeof row.type === 'string'
+          ? row.type
+          : undefined,
       typeof row.badge === 'string' ? row.badge : undefined
     );
     return {
@@ -204,11 +242,11 @@ export async function loadConfigFromSupabase(
       title: String(row.title || 'Task').slice(0, 80),
       taskType,
       badge: taskType,
-      rewardUsdt: numVal(row.reward_usdt, 0.1, 0),
+      rewardUsdt: numVal(row.reward_usdt ?? row.reward, 0.1, 0),
       url: typeof row.url === 'string' ? row.url : defaultConfig.channel1Url,
       completed: false,
       active: row.active !== false,
-      createdBy: 'admin',
+      createdBy: row.created_by === 'user' ? 'user' : 'admin',
     };
   });
 
@@ -431,14 +469,15 @@ export async function loadUsersAndClaimsFromSupabase(
     client.from('ad_slot_claims').select('*'),
   ]);
 
-  if (usersRes.error || withdrawsRes.error || claimsRes.error) {
+  if (usersRes.error || withdrawsRes.error) {
     throw new Error(
       usersRes.error?.message ||
         withdrawsRes.error?.message ||
-        claimsRes.error?.message ||
         'Failed loading Supabase users'
     );
   }
+
+  const claimsRows = claimsRes.error ? [] : (claimsRes.data || []);
 
   const withdrawsByUser: Record<string, WithdrawalItem[]> = {};
   for (const w of (withdrawsRes.data || []) as Record<string, unknown>[]) {
@@ -461,7 +500,7 @@ export async function loadUsersAndClaimsFromSupabase(
   }
 
   const adSlotClaims: AdSlotClaimRecord[] = (
-    (claimsRes.data || []) as Record<string, unknown>[]
+    claimsRows as Record<string, unknown>[]
   ).map((c) => ({
     user_id: String(c.user_id),
     slot_id: Number(c.slot_id) || 1,
@@ -477,9 +516,12 @@ export async function loadUsersAndClaimsFromSupabase(
   for (const row of (usersRes.data || []) as Record<string, unknown>[]) {
     const uid = String(row.user_id || '');
     if (!uid) continue;
-    const isTg = Boolean(row.is_telegram_user);
     const userName = String(row.user_name || `User ${uid}`);
-    if (!isTg || (userName === 'Earn Money User' && !isTg)) continue;
+    const isNumericTelegramId = /^\d{4,20}$/.test(uid);
+    const isTg =
+      Boolean(row.is_telegram_user) ||
+      (isNumericTelegramId && userName !== 'Earn Money User' && userName !== 'Preview Guest');
+    if (!isTg || (userName === 'Earn Money User' && !Boolean(row.is_telegram_user))) continue;
 
     const completedTaskIds = Array.isArray(row.completed_task_ids)
       ? (row.completed_task_ids as string[])
@@ -625,5 +667,11 @@ export async function upsertAdSlotClaimToSupabase(claim: AdSlotClaimRecord): Pro
     },
     { onConflict: 'user_id,slot_id' }
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    const msg = (error.message || '').toLowerCase();
+    if (error.code === '42P01' || error.code === 'PGRST205' || msg.includes('does not exist')) {
+      return;
+    }
+    throw new Error(error.message);
+  }
 }
