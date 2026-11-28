@@ -13,7 +13,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onOpenModal,
   onCompleteBonusTask,
 }) => {
-  const availableTasksCount = state.bonusTasks.filter((t) => !t.completed).length;
+  const visibleTasks = state.bonusTasks.filter((t) => t.active !== false);
+  const availableTasksCount = visibleTasks.filter((t) => !t.completed).length;
   const progressPct = Math.min(
     100,
     Math.round((state.dailyAdsCompleted / state.dailyAdsTotal) * 100)
@@ -86,7 +87,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
         </div>
 
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-          {state.bonusTasks.map((task) => (
+          {visibleTasks.map((task) => (
             <article
               key={task.id}
               className="mf-card-3d flex items-center justify-between gap-3 p-4"

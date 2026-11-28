@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import { AdminPanel } from './components/AdminPanel';
 import { BottomNav } from './components/earnmoney/BottomNav';
 import { ForceJoinGate } from './components/earnmoney/ForceJoinGate';
@@ -9,19 +9,46 @@ import { ReferView } from './components/earnmoney/ReferView';
 import { TasksView } from './components/earnmoney/TasksView';
 import { TopHeader } from './components/earnmoney/TopHeader';
 import { WithdrawView } from './components/earnmoney/WithdrawView';
-import { createInitialEarnMoneyState } from './data/defaultEarnMoneyState';
-import type { BonusTaskItem, EarnMoneyState, EarnMoneyTab, ModalType } from './types/earnMoney';
+import {
+  buildSupportTelegramUrl,
+  createInitialEarnMoneyState,
+  DEFAULT_EARNMONEY_CONFIG,
+  EARNMONEY_LIVE_CONFIG_KEY,
+} from './data/defaultEarnMoneyState';
+import type {
+  BonusTaskItem,
+  EarnMoneyConfig,
+  EarnMoneyState,
+  EarnMoneyTab,
+  ModalType,
+} from './types/earnMoney';
 import { initTelegramWebApp, openExternalTelegramLink } from './utils/telegram';
 
 const TOKEN_KEY = 'cinevault_admin_token';
 const STORAGE_PREFIX = 'earnmoney_user_v3_';
 
+function loadLocalConfig(): EarnMoneyConfig {
+  try {
+    const raw = window.localStorage.getItem(EARNMONEY_LIVE_CONFIG_KEY);
+    if (!raw) return DEFAULT_EARNMONEY_CONFIG;
+    const parsed = JSON.parse(raw) as Partial<EarnMoneyConfig>;
+    return {
+      ...DEFAULT_EARNMONEY_CONFIG,
+      ...parsed,
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : DEFAULT_EARNMONEY_CONFIG.tasks,
+    };
+  } catch {
+    return DEFAULT_EARNMONEY_CONFIG;
+  }
+}
+
 function loadLocalEarnMoneyState(
   userId: string,
   userName: string,
-  userAvatar: string
+  userAvatar: string,
+  config: EarnMoneyConfig
 ): EarnMoneyState {
-  const fallback = createInitialEarnMoneyState(userId, userName, userAvatar);
+  const fallback = createInitialEarnMoneyState(userId, userName, userAvatar, config);
   try {
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${userId}`);
     if (!raw) return fallback;
@@ -47,8 +74,9 @@ function loadLocalEarnMoneyState(
 
 const EarnMoneyApp: React.FC = () => {
   const [tgUser] = useState(() => initTelegramWebApp());
+  const [config, setConfig] = useState<EarnMoneyConfig>(() => loadLocalConfig());
   const [state, setState] = useState<EarnMoneyState>(() =>
-    loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl)
+    loadLocalEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl, loadLocalConfig())
   );
   const [enteredApp, setEnteredApp] = useState(false);
 
@@ -70,35 +98,23 @@ const EarnMoneyApp: React.FC = () => {
     }, 2800);
   };
 
-  const persistState = useCallback((nextState: EarnMoneyState) => {
+  const cacheState = useCallback((nextState: EarnMoneyState) => {
     try {
       window.localStorage.setItem(`${STORAGE_PREFIX}${nextState.userId}`, JSON.stringify(nextState));
     } catch {
       // ignore localStorage quota errors
     }
-
-    fetch('/api/earnmoney/state', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: nextState }),
-    }).catch(() => {
-      // offline fallback already stored in localStorage
-    });
   }, []);
 
-  const updateState = useCallback(
-    (updater: (prev: EarnMoneyState) => EarnMoneyState) => {
-      setState((prev) => {
-        const next = updater(prev);
-        persistState(next);
-        return next;
-      });
-    },
-    [persistState]
-  );
+  const cacheConfig = useCallback((nextConfig: EarnMoneyConfig) => {
+    try {
+      window.localStorage.setItem(EARNMONEY_LIVE_CONFIG_KEY, JSON.stringify(nextConfig));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, []);
 
-  useEffect(() => {
-    let active = true;
+  const syncFromServer = useCallback(async () => {
     const params = new URLSearchParams({
       uid: tgUser.id,
       name: tgUser.name,
@@ -108,39 +124,77 @@ const EarnMoneyApp: React.FC = () => {
       params.set('ref', tgUser.referrerId);
     }
 
-    (async () => {
-      try {
-        const stateRes = await fetch(`/api/earnmoney/state?${params.toString()}`);
-        if (active && stateRes.ok) {
-          const data = (await stateRes.json()) as { state?: EarnMoneyState };
-          if (data?.state) {
-            const nextMerged: EarnMoneyState = {
-              ...createInitialEarnMoneyState(tgUser.id, tgUser.name, tgUser.avatarUrl),
-              ...data.state,
-              userId: tgUser.id,
-              userName: tgUser.name,
-              userAvatar: tgUser.avatarUrl,
-            };
-            setState(nextMerged);
-            try {
-              window.localStorage.setItem(
-                `${STORAGE_PREFIX}${tgUser.id}`,
-                JSON.stringify(nextMerged)
-              );
-            } catch {
-              // ignore storage errors
-            }
-          }
-        }
-      } catch {
-        // fallback already initialized at 0
+    try {
+      const stateRes = await fetch(`/api/earnmoney/state?${params.toString()}`, {
+        cache: 'no-store',
+      });
+      if (!stateRes.ok) return;
+      const data = (await stateRes.json()) as {
+        state?: EarnMoneyState;
+        config?: EarnMoneyConfig;
+      };
+      if (data?.config) {
+        setConfig(data.config);
+        cacheConfig(data.config);
       }
-    })();
+      if (data?.state) {
+        const nextMerged: EarnMoneyState = {
+          ...createInitialEarnMoneyState(
+            tgUser.id,
+            tgUser.name,
+            tgUser.avatarUrl,
+            data.config || DEFAULT_EARNMONEY_CONFIG
+          ),
+          ...data.state,
+          userId: tgUser.id,
+          userName: tgUser.name,
+          userAvatar: tgUser.avatarUrl,
+        };
+        setState(nextMerged);
+        cacheState(nextMerged);
+      }
+    } catch {
+      // ignore transient network errors
+    }
+  }, [cacheConfig, cacheState, tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
+
+  useEffect(() => {
+    document.title = `${config.botName} — USDT BEP20 Mini App`;
+  }, [config.botName]);
+
+  useEffect(() => {
+    void syncFromServer();
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === EARNMONEY_LIVE_CONFIG_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as EarnMoneyConfig;
+          setConfig(parsed);
+          void syncFromServer();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void syncFromServer();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    document.addEventListener('visibilitychange', handleVisibility);
+    const interval = window.setInterval(() => {
+      void syncFromServer();
+    }, 6000);
 
     return () => {
-      active = false;
+      window.removeEventListener('storage', handleStorage);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(interval);
     };
-  }, [tgUser.avatarUrl, tgUser.id, tgUser.name, tgUser.referrerId]);
+  }, [syncFromServer]);
 
   useEffect(() => {
     if (activeTab === 'withdraw' && scrollHistoryQueued) {
@@ -166,17 +220,26 @@ const EarnMoneyApp: React.FC = () => {
       return;
     }
 
-    const reward = 0.001;
-    updateState((prev) => ({
-      ...prev,
-      totalBalance: Number((prev.totalBalance + reward).toFixed(4)),
-      totalIncome: Number((prev.totalIncome + reward).toFixed(4)),
-      dailyAdsCompleted: Math.min(prev.dailyAdsTotal, prev.dailyAdsCompleted + 1),
-      nextSlotNumber: Math.min(prev.dailyAdsTotal, prev.nextSlotNumber + 1),
-      adsWatchedTotal: prev.adsWatchedTotal + 1,
-      activateAdsDone: Math.min(3, prev.activateAdsDone + 1),
-    }));
-    notify('+0.0010 USDT added to your balance!');
+    fetch('/api/earnmoney/ad-claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: state.userId }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { state?: EarnMoneyState; error?: string };
+        if (!res.ok) {
+          notify(data.error || 'Unable to claim ad slot.');
+          return;
+        }
+        if (data.state) {
+          setState(data.state);
+          cacheState(data.state);
+        }
+        notify('+0.0010 USDT added to your balance!');
+      })
+      .catch(() => {
+        notify('Network error while claiming ad slot.');
+      });
   };
 
   const handleCompleteBonusTask = (task: BonusTaskItem) => {
@@ -185,28 +248,60 @@ const EarnMoneyApp: React.FC = () => {
       openExternalTelegramLink(task.url);
     }
 
-    updateState((prev) => ({
-      ...prev,
-      totalBalance: Number((prev.totalBalance + task.rewardUsdt).toFixed(4)),
-      totalIncome: Number((prev.totalIncome + task.rewardUsdt).toFixed(4)),
-      bonusTasks: prev.bonusTasks.map((t) =>
-        t.id === task.id ? { ...t, completed: true } : t
-      ),
-    }));
-    notify(`Verified! +${task.rewardUsdt.toFixed(2)} USDT credited.`);
+    fetch('/api/earnmoney/tasks/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: state.userId, taskId: task.id }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as {
+          state?: EarnMoneyState;
+          error?: string;
+          alreadyCompleted?: boolean;
+        };
+        if (!res.ok) {
+          notify(data.error || 'Unable to verify task.');
+          return;
+        }
+        if (data.state) {
+          setState(data.state);
+          cacheState(data.state);
+        }
+        if (!data.alreadyCompleted) {
+          notify(`Verified! +${task.rewardUsdt.toFixed(2)} USDT credited.`);
+        }
+      })
+      .catch(() => {
+        notify('Network error while verifying task.');
+      });
   };
 
   const handleAddTask = (taskInput: Omit<BonusTaskItem, 'id' | 'completed'>) => {
-    const newTask: BonusTaskItem = {
-      ...taskInput,
-      id: `task_${Date.now()}`,
-      completed: false,
-    };
-    updateState((prev) => ({
-      ...prev,
-      bonusTasks: [newTask, ...prev.bonusTasks],
-    }));
-    notify('Your custom task has been added to Task Center.');
+    fetch('/api/earnmoney/tasks/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid: state.userId,
+        title: taskInput.title,
+        rewardUsdt: taskInput.rewardUsdt,
+        url: taskInput.url,
+      }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { state?: EarnMoneyState; error?: string };
+        if (!res.ok) {
+          notify(data.error || 'Could not add task.');
+          return;
+        }
+        if (data.state) {
+          setState(data.state);
+          cacheState(data.state);
+        }
+        notify('Your custom task has been added to Task Center.');
+      })
+      .catch(() => {
+        notify('Network error while creating task.');
+      });
   };
 
   const handleCopyInviteLink = () => {
@@ -220,11 +315,15 @@ const EarnMoneyApp: React.FC = () => {
   };
 
   const handleJoinChannel = (channel: 'waincomesite' | 'premiumapps') => {
-    updateState((prev) => ({
-      ...prev,
-      joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
-      joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
-    }));
+    setState((prev) => {
+      const next: EarnMoneyState = {
+        ...prev,
+        joinedWaincomesite: channel === 'waincomesite' ? true : prev.joinedWaincomesite,
+        joinedPremiumApps: channel === 'premiumapps' ? true : prev.joinedPremiumApps,
+      };
+      cacheState(next);
+      return next;
+    });
 
     fetch('/api/earnmoney/mark-channel', {
       method: 'POST',
@@ -238,7 +337,7 @@ const EarnMoneyApp: React.FC = () => {
   const handleVerifyGate = () => {
     setActiveTab('home');
     setEnteredApp(true);
-    notify('Welcome to Earn Money!');
+    notify(`Welcome to ${config.botName}!`);
   };
 
   const handleVerifyActivate = () => {
@@ -247,61 +346,109 @@ const EarnMoneyApp: React.FC = () => {
       return;
     }
 
-    updateState((prev) => ({
-      ...prev,
-      referralActivated: true,
-    }));
-    notify('Referral rewards verified and active!');
+    fetch('/api/earnmoney/activate-refer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: state.userId }),
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { state?: EarnMoneyState; error?: string };
+        if (!res.ok) {
+          notify(data.error || 'Could not activate referral rewards.');
+          return;
+        }
+        if (data.state) {
+          setState(data.state);
+          cacheState(data.state);
+        }
+        notify('Referral rewards verified and active!');
+      })
+      .catch(() => {
+        notify('Network error while activating referral rewards.');
+      });
   };
 
-  const handleSubmitWithdraw = (
+  const handleSubmitWithdraw = async (
     amount: number,
     address: string
-  ): { ok: boolean; message: string } => {
-    if (amount < 0.8) {
-      return { ok: false, message: 'Minimum withdrawal is 0.80 USDT.' };
+  ): Promise<{ ok: boolean; message: string }> => {
+    if (amount < config.minWithdrawAmount) {
+      return {
+        ok: false,
+        message: `Minimum withdrawal is ${config.minWithdrawAmount.toFixed(2)} USDT.`,
+      };
     }
     if (amount > state.totalBalance) {
       return { ok: false, message: 'Insufficient USDT balance.' };
     }
-    if (state.referralsInvited < 5) {
-      return { ok: false, message: 'At least 5 valid referrals are required.' };
+
+    try {
+      const res = await fetch('/api/earnmoney/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: state.userId,
+          amount,
+          address,
+        }),
+      });
+      const data = (await res.json()) as {
+        state?: EarnMoneyState;
+        message?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        return { ok: false, message: data.error || 'Withdrawal request failed.' };
+      }
+      if (data.state) {
+        setState(data.state);
+        cacheState(data.state);
+      }
+      notify(`Withdrawal of ${amount.toFixed(2)} USDT submitted to BEP20.`);
+      return {
+        ok: true,
+        message: data.message || `Withdrawal request for ${amount.toFixed(2)} USDT submitted.`,
+      };
+    } catch {
+      return { ok: false, message: 'Network error while submitting withdrawal.' };
     }
-
-    const shortAddr =
-      address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address;
-    const todayLabel = new Date().toLocaleDateString('en-US', {
-      month: 'short',
-      day: '2-digit',
-      year: 'numeric',
-    });
-
-    updateState((prev) => ({
-      ...prev,
-      totalBalance: Number((prev.totalBalance - amount).toFixed(4)),
-      totalWithdraw: Number((prev.totalWithdraw + amount).toFixed(4)),
-      withdrawHistory: [
-        {
-          id: `wd_${Date.now()}`,
-          amountUsdt: amount,
-          address: shortAddr,
-          date: todayLabel,
-          status: 'Completed',
-        },
-        ...prev.withdrawHistory,
-      ],
-    }));
-
-    notify(`Withdrawal of ${amount.toFixed(2)} USDT submitted to BEP20.`);
-    return {
-      ok: true,
-      message: `Withdrawal request for ${amount.toFixed(2)} USDT submitted to ${shortAddr}.`,
-    };
   };
+
+  if (state.isBlocked) {
+    const supportUrl = buildSupportTelegramUrl(config.supportUsername);
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#F2F4F7] px-4 py-8 text-[#111827]">
+        <div className="mf-card-3d w-full max-w-md space-y-4 p-6 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <ShieldAlert className="h-7 w-7" />
+          </div>
+          <h1 className="font-display text-xl font-extrabold text-[#111827]">
+            Account Suspended
+          </h1>
+          <p className="text-sm font-medium text-slate-600">
+            Your account (ID: <span className="font-mono font-bold">{state.userId}</span>) has been
+            blocked by the administrator.
+          </p>
+          <a
+            href={supportUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              if (openExternalTelegramLink(supportUrl)) e.preventDefault();
+            }}
+            className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center px-4 py-3 text-sm font-extrabold"
+          >
+            Contact Support ({config.supportUsername})
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   if (!enteredApp) {
     return (
       <ForceJoinGate
+        config={config}
         joinedWaincomesite={state.joinedWaincomesite}
         joinedPremiumApps={state.joinedPremiumApps}
         onJoinChannel={handleJoinChannel}
@@ -313,6 +460,7 @@ const EarnMoneyApp: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#F2F4F7] text-[#111827] pb-24">
       <TopHeader
+        botName={config.botName}
         userName={state.userName}
         userId={state.userId}
         userAvatar={state.userAvatar}
@@ -332,6 +480,7 @@ const EarnMoneyApp: React.FC = () => {
         {activeTab === 'home' && (
           <HomeView
             state={state}
+            config={config}
             onNavigateTab={handleNavigateTab}
             onOpenModal={setActiveModal}
           />
@@ -348,6 +497,7 @@ const EarnMoneyApp: React.FC = () => {
         {activeTab === 'refer' && (
           <ReferView
             state={state}
+            config={config}
             onCopyInviteLink={handleCopyInviteLink}
             onJoinChannel={handleJoinChannel}
             onVerifyActivate={handleVerifyActivate}
@@ -358,6 +508,7 @@ const EarnMoneyApp: React.FC = () => {
         {activeTab === 'withdraw' && (
           <WithdrawView
             state={state}
+            config={config}
             historyRef={historyRef}
             onJoinChannel={handleJoinChannel}
             onSubmitWithdraw={handleSubmitWithdraw}
@@ -368,6 +519,7 @@ const EarnMoneyApp: React.FC = () => {
       <Modals
         activeModal={activeModal}
         state={state}
+        config={config}
         onClose={() => setActiveModal(null)}
         onClaimAdSlot={handleClaimAdSlot}
         onAddTask={handleAddTask}

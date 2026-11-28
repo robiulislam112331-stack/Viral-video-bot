@@ -6,44 +6,48 @@ import {
   Lock,
   ShieldCheck,
 } from 'lucide-react';
+import { deriveTelegramHandle } from '../../data/defaultEarnMoneyState';
+import type { EarnMoneyConfig } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 export interface ForceJoinGateProps {
+  config: EarnMoneyConfig;
   joinedWaincomesite: boolean;
   joinedPremiumApps: boolean;
   onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onVerifyMembership: () => void;
 }
 
-const CHANNELS: Array<{
-  key: 'waincomesite' | 'premiumapps';
-  buttonLabel: string;
-  title: string;
-  username: string;
-  url: string;
-}> = [
-  {
-    key: 'waincomesite',
-    buttonLabel: 'Join Channel 1',
-    title: 'Channel 1',
-    username: '@waincomesite',
-    url: 'https://t.me/waincomesite',
-  },
-  {
-    key: 'premiumapps',
-    buttonLabel: 'Join Channel 2',
-    title: 'Channel 2',
-    username: '@premiumapps5462',
-    url: 'https://t.me/premiumapps5462',
-  },
-];
-
 export const ForceJoinGate: React.FC<ForceJoinGateProps> = ({
+  config,
   joinedWaincomesite,
   joinedPremiumApps,
   onJoinChannel,
   onVerifyMembership,
 }) => {
+  const channels: Array<{
+    key: 'waincomesite' | 'premiumapps';
+    buttonLabel: string;
+    title: string;
+    username: string;
+    url: string;
+  }> = [
+    {
+      key: 'waincomesite',
+      buttonLabel: 'Join Channel 1',
+      title: 'Channel 1',
+      username: deriveTelegramHandle(config.channel1Url, '@Channel1'),
+      url: config.channel1Url,
+    },
+    {
+      key: 'premiumapps',
+      buttonLabel: 'Join Channel 2',
+      title: 'Channel 2',
+      username: deriveTelegramHandle(config.channel2Url, '@Channel2'),
+      url: config.channel2Url,
+    },
+  ];
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F2F4F7] px-4 py-8 text-[#111827]">
       <div className="w-full max-w-md space-y-5">
@@ -55,17 +59,17 @@ export const ForceJoinGate: React.FC<ForceJoinGateProps> = ({
             </div>
 
             <h1 className="mt-4 flex items-center justify-center gap-1.5 font-display text-xl font-extrabold text-[#111827]">
-              <span>Welcome to Earn Money</span>
+              <span>{config.welcomeTitle}</span>
               <Gift className="h-5 w-5 text-[#00944A]" aria-hidden="true" />
             </h1>
 
             <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-600">
-              Join our 2 official channels to stay updated.
+              {config.welcomeSubtitle}
             </p>
           </div>
 
           <div className="mt-6 space-y-3">
-            {CHANNELS.map((ch) => {
+            {channels.map((ch) => {
               const isJoined =
                 ch.key === 'waincomesite' ? joinedWaincomesite : joinedPremiumApps;
 

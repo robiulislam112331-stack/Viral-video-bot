@@ -13,12 +13,20 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import type { BonusTaskItem, EarnMoneyState, EarnMoneyTab, ModalType } from '../../types/earnMoney';
+import { buildSupportTelegramUrl } from '../../data/defaultEarnMoneyState';
+import type {
+  BonusTaskItem,
+  EarnMoneyConfig,
+  EarnMoneyState,
+  EarnMoneyTab,
+  ModalType,
+} from '../../types/earnMoney';
 import { openExternalTelegramLink, triggerMonetagAd } from '../../utils/telegram';
 
 interface ModalsProps {
   activeModal: ModalType;
   state: EarnMoneyState;
+  config: EarnMoneyConfig;
   onClose: () => void;
   onClaimAdSlot: () => void;
   onAddTask: (task: Omit<BonusTaskItem, 'id' | 'completed'>) => void;
@@ -30,6 +38,7 @@ interface ModalsProps {
 export const Modals: React.FC<ModalsProps> = ({
   activeModal,
   state,
+  config,
   onClose,
   onClaimAdSlot,
   onAddTask,
@@ -37,6 +46,7 @@ export const Modals: React.FC<ModalsProps> = ({
   onOpenModal,
   onNotify,
 }) => {
+  const supportUrl = buildSupportTelegramUrl(config.supportUsername);
   const [adSecondsLeft, setAdSecondsLeft] = useState(5);
   const [adStarted, setAdStarted] = useState(false);
 
@@ -270,18 +280,18 @@ export const Modals: React.FC<ModalsProps> = ({
             </div>
 
             <a
-              href="https://t.me/waincomesite"
+              href={supportUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
-                if (openExternalTelegramLink('https://t.me/waincomesite')) {
+                if (openExternalTelegramLink(supportUrl)) {
                   e.preventDefault();
                 }
               }}
               className="mf-btn-outline-3d flex min-h-[46px] w-full items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold"
             >
               <Send className="h-4 w-4" />
-              <span>Open Official Telegram Support</span>
+              <span>Open Official Telegram Support ({config.supportUsername})</span>
             </a>
 
             <form onSubmit={handleSupportSubmit} className="space-y-3 border-t border-slate-200 pt-3">
@@ -354,7 +364,7 @@ export const Modals: React.FC<ModalsProps> = ({
                 {
                   step: '04',
                   title: 'Withdraw to BEP20 (BSC)',
-                  desc: 'Once your balance reaches 0.80 USDT and rules are met, submit your BEP20 wallet address.',
+                  desc: `Once your balance reaches ${config.minWithdrawAmount.toFixed(2)} USDT and rules are met, submit your BEP20 wallet address.`,
                 },
               ].map((row) => (
                 <div
@@ -384,7 +394,7 @@ export const Modals: React.FC<ModalsProps> = ({
                 Add Your Task
               </h3>
               <p className="text-xs font-medium text-slate-500">
-                Publish a new task to the Earn Money Task Center.
+                Publish a new task to the {config.botName} Task Center.
               </p>
             </div>
 
@@ -459,7 +469,7 @@ export const Modals: React.FC<ModalsProps> = ({
           <div className="space-y-4 pt-1">
             <div className="pr-10">
               <h3 className="font-display text-lg font-extrabold text-[#111827]">
-                Earn Money Menu
+                {config.botName} Menu
               </h3>
               <p className="text-xs font-medium text-slate-500">
                 USDT BEP20 &middot; 1 USDT = $1.00 USD

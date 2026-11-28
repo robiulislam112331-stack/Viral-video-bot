@@ -13,6 +13,12 @@ import type {
   VideoItem,
   VideoStatus,
 } from './src/types.ts';
+import type {
+  AdminWithdrawalRecord,
+  BonusTaskItem,
+  EarnMoneyConfig,
+  EarnMoneyState,
+} from './src/types/earnMoney.ts';
 
 dotenv.config();
 
@@ -23,6 +29,7 @@ const DATA_DIR = path.resolve(__dirname, 'data');
 const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
 const STORE_PATH = path.resolve(DATA_DIR, 'cinevault_store.json');
 const EARNMONEY_PATH = path.resolve(DATA_DIR, 'earnmoney_users.json');
+const EARNMONEY_CONFIG_PATH = path.resolve(DATA_DIR, 'earnmoney_config.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -227,52 +234,105 @@ function saveStore(store: StoreSchema): void {
 
 let store: StoreSchema = loadStore();
 
-interface ServerEarnMoneyState {
-  userId: string;
-  userName: string;
-  userAvatar: string;
-  totalBalance: number;
-  referBalance: number;
-  totalIncome: number;
-  totalWithdraw: number;
-  dailyAdsCompleted: number;
-  dailyAdsTotal: number;
-  nextSlotNumber: number;
-  dailyCeilingUsdt: number;
-  referralsInvited: number;
-  adsWatchedTotal: number;
-  totalReferrals: number;
-  activeReferrals: number;
-  pendingReferrals: number;
-  referralActivated: boolean;
-  joinedWaincomesite: boolean;
-  joinedPremiumApps: boolean;
-  activateAdsDone: number;
-  bonusTasks: Array<{
-    id: string;
-    title: string;
-    badge: string;
-    rewardUsdt: number;
-    url?: string;
-    completed: boolean;
-  }>;
-  referralsList: Array<{
-    id: string;
-    username: string;
-    initials: string;
-    channelsJoined: number;
-    adsWatched: number;
-    status: 'PENDING' | 'ACTIVE';
-    rewardUsdt: number;
-  }>;
-  withdrawHistory: Array<{
-    id: string;
-    amountUsdt: number;
-    address: string;
-    date: string;
-    status: 'Completed' | 'Rejected';
-  }>;
+const DEFAULT_EARNMONEY_CONFIG: EarnMoneyConfig = {
+  botName: 'Earn Money',
+  welcomeTitle: 'Welcome to Earn Money',
+  welcomeSubtitle: 'Join our 2 official channels to stay updated.',
+  channel1Url: 'https://t.me/waincomesite',
+  channel2Url: 'https://t.me/premiumapps5462',
+  referBonusAmount: 0.1,
+  minWithdrawAmount: 0.8,
+  supportUsername: '@waincomesite',
+  tasks: [
+    {
+      id: 'task_verify_app',
+      title: 'Verify App',
+      badge: 'Daily',
+      rewardUsdt: 0.2,
+      url: 'https://t.me/premiumapps5462',
+      completed: false,
+      active: true,
+      createdBy: 'admin',
+    },
+  ],
+  updatedAt: new Date().toISOString(),
+};
+
+function loadEarnMoneyConfig(): EarnMoneyConfig {
+  if (!fs.existsSync(EARNMONEY_CONFIG_PATH)) {
+    saveEarnMoneyConfig(DEFAULT_EARNMONEY_CONFIG);
+    return structuredClone(DEFAULT_EARNMONEY_CONFIG);
+  }
+  try {
+    const raw = fs.readFileSync(EARNMONEY_CONFIG_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as Partial<EarnMoneyConfig>;
+    const tasks: BonusTaskItem[] = Array.isArray(parsed.tasks)
+      ? parsed.tasks.map((t) => ({
+          id: String(t.id || `task_${crypto.randomBytes(4).toString('hex')}`),
+          title: String(t.title || 'Task').slice(0, 80),
+          badge: String(t.badge || 'Daily').slice(0, 24),
+          rewardUsdt: Number.isFinite(Number(t.rewardUsdt)) ? Number(t.rewardUsdt) : 0.1,
+          url: typeof t.url === 'string' ? t.url : 'https://t.me/waincomesite',
+          completed: false,
+          active: t.active !== false,
+          createdBy: 'admin',
+        }))
+      : structuredClone(DEFAULT_EARNMONEY_CONFIG.tasks);
+
+    return {
+      botName:
+        typeof parsed.botName === 'string' && parsed.botName.trim()
+          ? parsed.botName.trim()
+          : DEFAULT_EARNMONEY_CONFIG.botName,
+      welcomeTitle:
+        typeof parsed.welcomeTitle === 'string' && parsed.welcomeTitle.trim()
+          ? parsed.welcomeTitle.trim()
+          : DEFAULT_EARNMONEY_CONFIG.welcomeTitle,
+      welcomeSubtitle:
+        typeof parsed.welcomeSubtitle === 'string' && parsed.welcomeSubtitle.trim()
+          ? parsed.welcomeSubtitle.trim()
+          : DEFAULT_EARNMONEY_CONFIG.welcomeSubtitle,
+      channel1Url:
+        typeof parsed.channel1Url === 'string' && parsed.channel1Url.trim()
+          ? parsed.channel1Url.trim()
+          : DEFAULT_EARNMONEY_CONFIG.channel1Url,
+      channel2Url:
+        typeof parsed.channel2Url === 'string' && parsed.channel2Url.trim()
+          ? parsed.channel2Url.trim()
+          : DEFAULT_EARNMONEY_CONFIG.channel2Url,
+      referBonusAmount:
+        typeof parsed.referBonusAmount === 'number' &&
+        Number.isFinite(parsed.referBonusAmount) &&
+        parsed.referBonusAmount >= 0
+          ? parsed.referBonusAmount
+          : DEFAULT_EARNMONEY_CONFIG.referBonusAmount,
+      minWithdrawAmount:
+        typeof parsed.minWithdrawAmount === 'number' &&
+        Number.isFinite(parsed.minWithdrawAmount) &&
+        parsed.minWithdrawAmount >= 0
+          ? parsed.minWithdrawAmount
+          : DEFAULT_EARNMONEY_CONFIG.minWithdrawAmount,
+      supportUsername:
+        typeof parsed.supportUsername === 'string' && parsed.supportUsername.trim()
+          ? parsed.supportUsername.trim()
+          : DEFAULT_EARNMONEY_CONFIG.supportUsername,
+      tasks,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    return structuredClone(DEFAULT_EARNMONEY_CONFIG);
+  }
 }
+
+function saveEarnMoneyConfig(config: EarnMoneyConfig): void {
+  const tempPath = `${EARNMONEY_CONFIG_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), 'utf-8');
+  fs.renameSync(tempPath, EARNMONEY_CONFIG_PATH);
+}
+
+let earnMoneyConfig: EarnMoneyConfig = loadEarnMoneyConfig();
+
+type ServerEarnMoneyState = EarnMoneyState;
 
 type EarnMoneyUserMap = Record<string, ServerEarnMoneyState>;
 
@@ -285,6 +345,7 @@ function createZeroEarnMoneyUser(
     userId,
     userName: userName || 'Earn Money User',
     userAvatar: userAvatar || '/src/assets/images/earnmoney_avatar_1795708537961.jpg',
+    isBlocked: false,
     totalBalance: 0,
     referBalance: 0,
     totalIncome: 0,
@@ -302,18 +363,43 @@ function createZeroEarnMoneyUser(
     joinedWaincomesite: false,
     joinedPremiumApps: false,
     activateAdsDone: 0,
-    bonusTasks: [
-      {
-        id: 'task_verify_app',
-        title: 'Verify App',
-        badge: 'Daily',
-        rewardUsdt: 0.2,
-        url: 'https://t.me/premiumapps5462',
-        completed: false,
-      },
-    ],
+    completedTaskIds: [],
+    bonusTasks: [],
     referralsList: [],
     withdrawHistory: [],
+  };
+}
+
+function syncUserWithConfig(user: ServerEarnMoneyState): ServerEarnMoneyState {
+  const completedSet = new Set<string>(Array.isArray(user.completedTaskIds) ? user.completedTaskIds : []);
+  if (Array.isArray(user.bonusTasks)) {
+    for (const t of user.bonusTasks) {
+      if (t.completed) completedSet.add(t.id);
+    }
+  }
+
+  const adminTasks = earnMoneyConfig.tasks
+    .filter((t) => t.active !== false)
+    .map((t) => ({
+      ...t,
+      completed: completedSet.has(t.id),
+      createdBy: 'admin' as const,
+    }));
+
+  const userCustomTasks = (Array.isArray(user.bonusTasks) ? user.bonusTasks : [])
+    .filter((t) => t.createdBy === 'user')
+    .map((t) => ({
+      ...t,
+      completed: t.completed || completedSet.has(t.id),
+    }));
+
+  return {
+    ...user,
+    isBlocked: Boolean(user.isBlocked),
+    completedTaskIds: Array.from(completedSet),
+    bonusTasks: [...adminTasks, ...userCustomTasks],
+    referralsList: Array.isArray(user.referralsList) ? user.referralsList : [],
+    withdrawHistory: Array.isArray(user.withdrawHistory) ? user.withdrawHistory : [],
   };
 }
 
@@ -656,6 +742,11 @@ async function startServer() {
     });
   }
 
+  app.get('/api/earnmoney/config', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ config: earnMoneyConfig });
+  });
+
   app.get('/api/earnmoney/state', (req, res) => {
     const rawUid = typeof req.query?.uid === 'string' ? req.query.uid.trim() : '';
     const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
@@ -682,7 +773,10 @@ async function startServer() {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ state: earnMoneyUsers[uid] });
+    res.json({
+      state: syncUserWithConfig(earnMoneyUsers[uid]),
+      config: earnMoneyConfig,
+    });
   });
 
   app.put('/api/earnmoney/state', (req, res) => {
@@ -708,13 +802,244 @@ async function startServer() {
           : '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
       );
 
+    if (base.isBlocked) {
+      res.status(403).json({ error: 'Account is blocked by administrator.' });
+      return;
+    }
+
+    // Preserve admin-governed fields (isBlocked, balances, withdrawHistory) when syncing client UI state
     earnMoneyUsers[uid] = {
       ...base,
-      ...(incoming as Partial<ServerEarnMoneyState>),
+      userName:
+        typeof incoming.userName === 'string' && incoming.userName.trim()
+          ? incoming.userName.trim().slice(0, 80)
+          : base.userName,
+      userAvatar:
+        typeof incoming.userAvatar === 'string' && isSafeUrl(incoming.userAvatar, false)
+          ? incoming.userAvatar
+          : base.userAvatar,
+      joinedWaincomesite: Boolean(incoming.joinedWaincomesite ?? base.joinedWaincomesite),
+      joinedPremiumApps: Boolean(incoming.joinedPremiumApps ?? base.joinedPremiumApps),
+      referralActivated: Boolean(incoming.referralActivated ?? base.referralActivated),
       userId: uid,
     };
     saveEarnMoneyUsers(earnMoneyUsers);
-    res.json({ ok: true });
+    res.json({ ok: true, state: syncUserWithConfig(earnMoneyUsers[uid]) });
+  });
+
+  app.post('/api/earnmoney/ad-claim', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (!uid) {
+      res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+
+    const user =
+      earnMoneyUsers[uid] ??
+      createZeroEarnMoneyUser(
+        uid,
+        'Earn Money User',
+        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+      );
+    if (user.isBlocked) {
+      res.status(403).json({ error: 'Your account has been blocked by admin.' });
+      return;
+    }
+    if (user.dailyAdsCompleted >= user.dailyAdsTotal) {
+      res.status(400).json({ error: 'Daily 100 ad slots already completed.' });
+      return;
+    }
+
+    const reward = 0.001;
+    user.totalBalance = Number((user.totalBalance + reward).toFixed(4));
+    user.totalIncome = Number((user.totalIncome + reward).toFixed(4));
+    user.dailyAdsCompleted = Math.min(user.dailyAdsTotal, user.dailyAdsCompleted + 1);
+    user.nextSlotNumber = Math.min(user.dailyAdsTotal, user.nextSlotNumber + 1);
+    user.adsWatchedTotal += 1;
+    user.activateAdsDone = Math.min(3, user.activateAdsDone + 1);
+
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig });
+  });
+
+  app.post('/api/earnmoney/tasks/complete', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const taskId = typeof req.body?.taskId === 'string' ? req.body.taskId.trim() : '';
+    if (!uid || !taskId) {
+      res.status(400).json({ error: 'Valid uid and taskId are required.' });
+      return;
+    }
+
+    const user =
+      earnMoneyUsers[uid] ??
+      createZeroEarnMoneyUser(
+        uid,
+        'Earn Money User',
+        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+      );
+    if (user.isBlocked) {
+      res.status(403).json({ error: 'Your account has been blocked by admin.' });
+      return;
+    }
+
+    const completedSet = new Set<string>(user.completedTaskIds || []);
+    if (completedSet.has(taskId)) {
+      res.json({ state: syncUserWithConfig(user), config: earnMoneyConfig, alreadyCompleted: true });
+      return;
+    }
+
+    const adminTask = earnMoneyConfig.tasks.find((t) => t.id === taskId && t.active !== false);
+    const customTask = (user.bonusTasks || []).find((t) => t.id === taskId && t.createdBy === 'user');
+    const targetTask = adminTask || customTask;
+    if (!targetTask) {
+      res.status(404).json({ error: 'Task not found or inactive.' });
+      return;
+    }
+
+    completedSet.add(taskId);
+    user.completedTaskIds = Array.from(completedSet);
+    if (customTask) {
+      customTask.completed = true;
+    }
+    user.totalBalance = Number((user.totalBalance + targetTask.rewardUsdt).toFixed(4));
+    user.totalIncome = Number((user.totalIncome + targetTask.rewardUsdt).toFixed(4));
+
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({
+      state: syncUserWithConfig(user),
+      config: earnMoneyConfig,
+      rewardUsdt: targetTask.rewardUsdt,
+    });
+  });
+
+  app.post('/api/earnmoney/tasks/custom', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
+    const rewardUsdt = Number(req.body?.rewardUsdt);
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+
+    if (!uid || title.length < 3 || !Number.isFinite(rewardUsdt) || rewardUsdt <= 0 || rewardUsdt > 50 || !isSafeUrl(url, false)) {
+      res.status(400).json({ error: 'Invalid custom task parameters.' });
+      return;
+    }
+
+    const user =
+      earnMoneyUsers[uid] ??
+      createZeroEarnMoneyUser(
+        uid,
+        'Earn Money User',
+        '/src/assets/images/earnmoney_avatar_1795708537961.jpg'
+      );
+    if (user.isBlocked) {
+      res.status(403).json({ error: 'Your account has been blocked by admin.' });
+      return;
+    }
+
+    const newTask: BonusTaskItem = {
+      id: `utask_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      title,
+      badge: 'Community',
+      rewardUsdt: Number(rewardUsdt.toFixed(2)),
+      url,
+      completed: false,
+      active: true,
+      createdBy: 'user',
+    };
+    user.bonusTasks = [newTask, ...(user.bonusTasks || [])];
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.status(201).json({ state: syncUserWithConfig(user), config: earnMoneyConfig });
+  });
+
+  app.post('/api/earnmoney/activate-refer', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (!uid || !earnMoneyUsers[uid]) {
+      res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+
+    const user = earnMoneyUsers[uid];
+    if (!user.joinedWaincomesite || !user.joinedPremiumApps || user.activateAdsDone < 3) {
+      res.status(400).json({
+        error: 'Join both channels and watch 3 ads to activate referral rewards.',
+      });
+      return;
+    }
+
+    user.referralActivated = true;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({ state: syncUserWithConfig(user) });
+  });
+
+  app.post('/api/earnmoney/withdraw', (req, res) => {
+    const rawUid = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+    const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const amount = Number(req.body?.amount);
+    const address = typeof req.body?.address === 'string' ? req.body.address.trim() : '';
+
+    if (!uid) {
+      res.status(400).json({ error: 'Valid uid is required.' });
+      return;
+    }
+
+    const user = earnMoneyUsers[uid];
+    if (!user) {
+      res.status(404).json({ error: 'User account not found.' });
+      return;
+    }
+    if (user.isBlocked) {
+      res.status(403).json({ error: 'Your account is blocked and cannot withdraw.' });
+      return;
+    }
+
+    const minWithdraw = earnMoneyConfig.minWithdrawAmount;
+    if (!Number.isFinite(amount) || amount < minWithdraw) {
+      res.status(400).json({
+        error: `Minimum withdrawal amount is ${minWithdraw.toFixed(2)} USDT.`,
+      });
+      return;
+    }
+    if (amount > user.totalBalance) {
+      res.status(400).json({ error: 'Insufficient USDT balance.' });
+      return;
+    }
+    if (!/^0x[a-fA-F0-9]{10,42}$/.test(address)) {
+      res.status(400).json({ error: 'Enter a valid BEP20 (BSC) wallet address starting with 0x.' });
+      return;
+    }
+
+    const shortAddr =
+      address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address;
+    const todayLabel = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric',
+    });
+
+    user.totalBalance = Number((user.totalBalance - amount).toFixed(4));
+    user.withdrawHistory = [
+      {
+        id: `wd_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+        amountUsdt: Number(amount.toFixed(4)),
+        address: shortAddr,
+        date: todayLabel,
+        status: 'Pending',
+      },
+      ...(user.withdrawHistory || []),
+    ];
+
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.status(201).json({
+      state: syncUserWithConfig(user),
+      message: `Withdrawal request for ${amount.toFixed(2)} USDT submitted to ${shortAddr}.`,
+    });
   });
 
   app.post('/api/earnmoney/mark-channel', (req, res) => {
@@ -813,12 +1138,12 @@ async function startServer() {
         if (botToken) {
           await telegramBotApiCall(botToken, 'sendMessage', {
             chat_id: chatId,
-            text: 'Welcome to Earn Money 🎁\nJoin our 2 official channels to stay updated.',
+            text: `${earnMoneyConfig.welcomeTitle} 🎁\n${earnMoneyConfig.welcomeSubtitle}`,
             reply_markup: {
               inline_keyboard: [
                 [
-                  { text: 'Join Channel 1', url: 'https://t.me/waincomesite' },
-                  { text: 'Join Channel 2', url: 'https://t.me/premiumapps5462' },
+                  { text: 'Join Channel 1', url: earnMoneyConfig.channel1Url },
+                  { text: 'Join Channel 2', url: earnMoneyConfig.channel2Url },
                 ],
                 [{ text: '✅ Verify & Continue', callback_data: 'verify_membership' }],
               ],
@@ -834,16 +1159,16 @@ async function startServer() {
       if (botToken) {
         await telegramBotApiCall(botToken, 'answerCallbackQuery', {
           callback_query_id: update.callback_query.id,
-          text: 'Opening Earn Money...',
+          text: `Opening ${earnMoneyConfig.botName}...`,
           show_alert: false,
         });
         if (chatId) {
           await telegramBotApiCall(botToken, 'sendMessage', {
             chat_id: chatId,
-            text: '✅ Welcome to Earn Money! Tap below to open:',
+            text: `✅ Welcome to ${earnMoneyConfig.botName}! Tap below to open:`,
             reply_markup: {
               inline_keyboard: [
-                [{ text: 'Open Earn Money 🎁', web_app: { url: appBaseUrl } }],
+                [{ text: `Open ${earnMoneyConfig.botName} 🎁`, web_app: { url: appBaseUrl } }],
               ],
             },
           });
@@ -1182,6 +1507,304 @@ async function startServer() {
     };
     saveStore(store);
     res.json({ settings: store.settings });
+  });
+
+  // --- Protected /admin Earn Money Management Routes ---
+
+  function buildEarnMoneyAdminOverview() {
+    const usersList = Object.values(earnMoneyUsers).map((u) => syncUserWithConfig(u));
+    const withdrawals: AdminWithdrawalRecord[] = [];
+    for (const user of usersList) {
+      for (const wd of user.withdrawHistory || []) {
+        withdrawals.push({
+          ...wd,
+          userId: user.userId,
+          userName: user.userName,
+          userBalance: user.totalBalance,
+        });
+      }
+    }
+
+    const pendingWithdrawals = withdrawals.filter((w) => w.status === 'Pending').length;
+    const totalWithdrawAmount = Number(
+      usersList.reduce((acc, u) => acc + (u.totalWithdraw || 0), 0).toFixed(4)
+    );
+
+    return {
+      config: earnMoneyConfig,
+      users: usersList,
+      withdrawals,
+      stats: {
+        totalUsers: usersList.length,
+        activeUsers: usersList.filter((u) => !u.isBlocked).length,
+        blockedUsers: usersList.filter((u) => Boolean(u.isBlocked)).length,
+        totalTasks: earnMoneyConfig.tasks.length,
+        activeTasks: earnMoneyConfig.tasks.filter((t) => t.active !== false).length,
+        pendingWithdrawals,
+        totalWithdrawAmount,
+      },
+    };
+  }
+
+  app.get('/api/admin/earnmoney/overview', requireAdmin, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(buildEarnMoneyAdminOverview());
+  });
+
+  app.put('/api/admin/earnmoney/settings', requireAdmin, (req, res) => {
+    const botName =
+      typeof req.body?.botName === 'string' ? req.body.botName.trim().slice(0, 80) : '';
+    const welcomeTitle =
+      typeof req.body?.welcomeTitle === 'string' ? req.body.welcomeTitle.trim().slice(0, 140) : '';
+    const welcomeSubtitle =
+      typeof req.body?.welcomeSubtitle === 'string'
+        ? req.body.welcomeSubtitle.trim().slice(0, 240)
+        : '';
+    const channel1Url =
+      typeof req.body?.channel1Url === 'string' ? req.body.channel1Url.trim() : '';
+    const channel2Url =
+      typeof req.body?.channel2Url === 'string' ? req.body.channel2Url.trim() : '';
+    const referBonusAmount = Number(req.body?.referBonusAmount);
+    const minWithdrawAmount = Number(req.body?.minWithdrawAmount);
+    const supportUsername =
+      typeof req.body?.supportUsername === 'string'
+        ? req.body.supportUsername.trim().slice(0, 80)
+        : '';
+
+    if (!botName || !welcomeTitle || !welcomeSubtitle) {
+      res.status(400).json({ error: 'Bot Name, Welcome Title, and Welcome Subtitle are required.' });
+      return;
+    }
+    if (!isSafeUrl(channel1Url, false) || !isSafeUrl(channel2Url, false)) {
+      res.status(400).json({ error: 'Channel 1 and Channel 2 links must be valid http/https URLs.' });
+      return;
+    }
+    if (!Number.isFinite(referBonusAmount) || referBonusAmount < 0 || referBonusAmount > 1000) {
+      res.status(400).json({ error: 'Refer Bonus Amount must be a valid non-negative number.' });
+      return;
+    }
+    if (!Number.isFinite(minWithdrawAmount) || minWithdrawAmount < 0 || minWithdrawAmount > 10000) {
+      res.status(400).json({ error: 'Min Withdraw Amount must be a valid non-negative number.' });
+      return;
+    }
+    if (!supportUsername) {
+      res.status(400).json({ error: 'Support Username is required.' });
+      return;
+    }
+
+    earnMoneyConfig = {
+      ...earnMoneyConfig,
+      botName,
+      welcomeTitle,
+      welcomeSubtitle,
+      channel1Url,
+      channel2Url,
+      referBonusAmount: Number(referBonusAmount.toFixed(4)),
+      minWithdrawAmount: Number(minWithdrawAmount.toFixed(4)),
+      supportUsername: supportUsername.startsWith('@') || supportUsername.startsWith('http')
+        ? supportUsername
+        : `@${supportUsername}`,
+      updatedAt: new Date().toISOString(),
+    };
+    saveEarnMoneyConfig(earnMoneyConfig);
+    res.json({ config: earnMoneyConfig });
+  });
+
+  app.post('/api/admin/earnmoney/tasks', requireAdmin, (req, res) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 80) : '';
+    const badge =
+      typeof req.body?.badge === 'string' && req.body.badge.trim()
+        ? req.body.badge.trim().slice(0, 24)
+        : 'Daily';
+    const rewardUsdt = Number(req.body?.rewardUsdt);
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    const active = req.body?.active !== false;
+
+    if (title.length < 2) {
+      res.status(400).json({ error: 'Task title is required.' });
+      return;
+    }
+    if (!Number.isFinite(rewardUsdt) || rewardUsdt <= 0 || rewardUsdt > 1000) {
+      res.status(400).json({ error: 'Task reward must be greater than 0.' });
+      return;
+    }
+    if (!isSafeUrl(url, false)) {
+      res.status(400).json({ error: 'Valid http/https Task URL is required.' });
+      return;
+    }
+
+    const newTask: BonusTaskItem = {
+      id: `task_${crypto.randomBytes(5).toString('hex')}`,
+      title,
+      badge,
+      rewardUsdt: Number(rewardUsdt.toFixed(4)),
+      url,
+      completed: false,
+      active,
+      createdBy: 'admin',
+    };
+
+    earnMoneyConfig = {
+      ...earnMoneyConfig,
+      tasks: [newTask, ...earnMoneyConfig.tasks],
+      updatedAt: new Date().toISOString(),
+    };
+    saveEarnMoneyConfig(earnMoneyConfig);
+    res.status(201).json({ task: newTask, config: earnMoneyConfig });
+  });
+
+  app.put('/api/admin/earnmoney/tasks/:id', requireAdmin, (req, res) => {
+    const task = earnMoneyConfig.tasks.find((t) => t.id === req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found.' });
+      return;
+    }
+
+    if (typeof req.body?.title === 'string') {
+      const t = req.body.title.trim().slice(0, 80);
+      if (t.length < 2) {
+        res.status(400).json({ error: 'Task title cannot be empty.' });
+        return;
+      }
+      task.title = t;
+    }
+    if (typeof req.body?.badge === 'string') {
+      const b = req.body.badge.trim().slice(0, 24);
+      if (b) task.badge = b;
+    }
+    if (req.body?.rewardUsdt !== undefined) {
+      const r = Number(req.body.rewardUsdt);
+      if (!Number.isFinite(r) || r <= 0 || r > 1000) {
+        res.status(400).json({ error: 'Reward must be greater than 0.' });
+        return;
+      }
+      task.rewardUsdt = Number(r.toFixed(4));
+    }
+    if (typeof req.body?.url === 'string') {
+      const u = req.body.url.trim();
+      if (!isSafeUrl(u, false)) {
+        res.status(400).json({ error: 'Valid http/https Task URL is required.' });
+        return;
+      }
+      task.url = u;
+    }
+    if (typeof req.body?.active === 'boolean') {
+      task.active = req.body.active;
+    }
+
+    earnMoneyConfig.updatedAt = new Date().toISOString();
+    saveEarnMoneyConfig(earnMoneyConfig);
+    res.json({ task, config: earnMoneyConfig });
+  });
+
+  app.delete('/api/admin/earnmoney/tasks/:id', requireAdmin, (req, res) => {
+    const before = earnMoneyConfig.tasks.length;
+    earnMoneyConfig = {
+      ...earnMoneyConfig,
+      tasks: earnMoneyConfig.tasks.filter((t) => t.id !== req.params.id),
+      updatedAt: new Date().toISOString(),
+    };
+    if (earnMoneyConfig.tasks.length === before) {
+      res.status(404).json({ error: 'Task not found.' });
+      return;
+    }
+    saveEarnMoneyConfig(earnMoneyConfig);
+    res.json({ deleted: req.params.id, config: earnMoneyConfig });
+  });
+
+  app.get('/api/admin/earnmoney/users', requireAdmin, (req, res) => {
+    const q = typeof req.query?.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+    const usersList = Object.values(earnMoneyUsers)
+      .filter((u) => {
+        if (!q) return true;
+        return u.userId.toLowerCase().includes(q) || u.userName.toLowerCase().includes(q);
+      })
+      .map((u) => syncUserWithConfig(u));
+    res.json({ users: usersList });
+  });
+
+  app.post('/api/admin/earnmoney/users/:uid/balance', requireAdmin, (req, res) => {
+    const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const user = earnMoneyUsers[uid];
+    if (!user) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    const action = req.body?.action;
+    const amount = Number(req.body?.amount);
+    if ((action !== 'add' && action !== 'cut') || !Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+      res.status(400).json({ error: 'Valid action (add/cut) and positive amount are required.' });
+      return;
+    }
+
+    if (action === 'add') {
+      user.totalBalance = Number((user.totalBalance + amount).toFixed(4));
+      user.totalIncome = Number((user.totalIncome + amount).toFixed(4));
+    } else {
+      user.totalBalance = Math.max(0, Number((user.totalBalance - amount).toFixed(4)));
+    }
+
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({ user: syncUserWithConfig(user) });
+  });
+
+  app.post('/api/admin/earnmoney/users/:uid/block', requireAdmin, (req, res) => {
+    const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const user = earnMoneyUsers[uid];
+    if (!user) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    const isBlocked = typeof req.body?.isBlocked === 'boolean' ? req.body.isBlocked : !user.isBlocked;
+    user.isBlocked = isBlocked;
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({ user: syncUserWithConfig(user) });
+  });
+
+  app.post('/api/admin/earnmoney/withdrawals/:uid/:wdId/decide', requireAdmin, (req, res) => {
+    const uid = String(req.params.uid || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const wdId = String(req.params.wdId || '');
+    const decision = req.body?.decision;
+
+    const user = earnMoneyUsers[uid];
+    if (!user) {
+      res.status(404).json({ error: 'User not found.' });
+      return;
+    }
+
+    const wd = (user.withdrawHistory || []).find((item) => item.id === wdId);
+    if (!wd) {
+      res.status(404).json({ error: 'Withdrawal request not found.' });
+      return;
+    }
+    if (wd.status !== 'Pending') {
+      res.status(409).json({ error: `Withdrawal is already ${wd.status}.` });
+      return;
+    }
+    if (decision !== 'approve' && decision !== 'reject') {
+      res.status(400).json({ error: 'Decision must be approve or reject.' });
+      return;
+    }
+
+    if (decision === 'approve') {
+      wd.status = 'Completed';
+      user.totalWithdraw = Number((user.totalWithdraw + wd.amountUsdt).toFixed(4));
+    } else {
+      wd.status = 'Rejected';
+      user.totalBalance = Number((user.totalBalance + wd.amountUsdt).toFixed(4));
+    }
+
+    earnMoneyUsers[uid] = user;
+    saveEarnMoneyUsers(earnMoneyUsers);
+    res.json({
+      withdrawal: wd,
+      user: syncUserWithConfig(user),
+      overview: buildEarnMoneyAdminOverview(),
+    });
   });
 
   const httpServer = http.createServer(app);

@@ -1,28 +1,35 @@
 import React, { useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, ShieldCheck, Wallet, XCircle } from 'lucide-react';
-import type { EarnMoneyState } from '../../types/earnMoney';
+import { deriveTelegramHandle } from '../../data/defaultEarnMoneyState';
+import type { EarnMoneyConfig, EarnMoneyState } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 interface WithdrawViewProps {
   state: EarnMoneyState;
+  config: EarnMoneyConfig;
   historyRef: React.RefObject<HTMLElement | null>;
   onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
-  onSubmitWithdraw: (amount: number, address: string) => { ok: boolean; message: string };
+  onSubmitWithdraw: (amount: number, address: string) => Promise<{ ok: boolean; message: string }>;
 }
 
 export const WithdrawView: React.FC<WithdrawViewProps> = ({
   state,
+  config,
   historyRef,
   onJoinChannel,
   onSubmitWithdraw,
 }) => {
   const [amountInput, setAmountInput] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; text: string } | null>(
     null
   );
 
-  const meetsMinimum = state.totalBalance >= 0.8;
+  const minWithdraw = config.minWithdrawAmount;
+  const channel1Handle = deriveTelegramHandle(config.channel1Url, '@Channel1');
+  const channel2Handle = deriveTelegramHandle(config.channel2Url, '@Channel2');
+  const meetsMinimum = state.totalBalance >= minWithdraw;
   const meetsReferrals = state.referralsInvited >= 5;
 
   const handleSetMax = () => {
@@ -30,13 +37,16 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
     setFeedback(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numericAmount = Number.parseFloat(amountInput);
     const trimmedAddr = walletAddress.trim();
 
-    if (!Number.isFinite(numericAmount) || numericAmount < 0.8) {
-      setFeedback({ type: 'error', text: 'Minimum withdrawal amount is 0.80 USDT.' });
+    if (!Number.isFinite(numericAmount) || numericAmount < minWithdraw) {
+      setFeedback({
+        type: 'error',
+        text: `Minimum withdrawal amount is ${minWithdraw.toFixed(2)} USDT.`,
+      });
       return;
     }
 
@@ -53,13 +63,18 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
       return;
     }
 
-    const result = onSubmitWithdraw(numericAmount, trimmedAddr);
-    if (result.ok) {
-      setAmountInput('');
-      setWalletAddress('');
-      setFeedback({ type: 'success', text: result.message });
-    } else {
-      setFeedback({ type: 'error', text: result.message });
+    setSubmitting(true);
+    try {
+      const result = await onSubmitWithdraw(numericAmount, trimmedAddr);
+      if (result.ok) {
+        setAmountInput('');
+        setWalletAddress('');
+        setFeedback({ type: 'success', text: result.message });
+      } else {
+        setFeedback({ type: 'error', text: result.message });
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -96,7 +111,9 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
           <div className="space-y-2.5">
             <div className="flex items-center justify-between rounded-2xl bg-[#F6F8FA] px-3.5 py-2.5 text-xs">
-              <span className="font-bold text-[#111827]">Minimum 0.80 USDT</span>
+              <span className="font-bold text-[#111827]">
+                Minimum {minWithdraw.toFixed(2)} USDT
+              </span>
               <span
                 className={`inline-flex items-center gap-1 font-extrabold ${
                   meetsMinimum ? 'text-[#00944A]' : 'text-amber-600'
@@ -130,12 +147,12 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             </div>
 
             <a
-              href="https://t.me/waincomesite"
+              href={config.channel1Url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
                 onJoinChannel('waincomesite');
-                if (openExternalTelegramLink('https://t.me/waincomesite')) {
+                if (openExternalTelegramLink(config.channel1Url)) {
                   e.preventDefault();
                 }
               }}
@@ -143,7 +160,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             >
               <span className="flex items-center gap-2 font-bold text-[#111827]">
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
-                <span>@waincomesite</span>
+                <span>{channel1Handle}</span>
               </span>
               <span
                 className={`font-extrabold ${
@@ -155,12 +172,12 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             </a>
 
             <a
-              href="https://t.me/premiumapps5462"
+              href={config.channel2Url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
                 onJoinChannel('premiumapps');
-                if (openExternalTelegramLink('https://t.me/premiumapps5462')) {
+                if (openExternalTelegramLink(config.channel2Url)) {
                   e.preventDefault();
                 }
               }}
@@ -168,7 +185,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             >
               <span className="flex items-center gap-2 font-bold text-[#111827]">
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
-                <span>@premiumapps5462</span>
+                <span>{channel2Handle}</span>
               </span>
               <span
                 className={`font-extrabold ${
@@ -187,7 +204,7 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
             Request
           </h2>
 
-          <form onSubmit={handleSubmit} className="mt-3.5 space-y-3.5">
+          <form onSubmit={(e) => void handleSubmit(e)} className="mt-3.5 space-y-3.5">
             <div>
               <label
                 htmlFor="withdraw-amount"
@@ -200,8 +217,8 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                   id="withdraw-amount"
                   type="number"
                   step="0.01"
-                  min="0.80"
-                  placeholder="0.80"
+                  min={minWithdraw.toFixed(2)}
+                  placeholder={minWithdraw.toFixed(2)}
                   value={amountInput}
                   onChange={(e) => {
                     setAmountInput(e.target.value);
@@ -259,9 +276,12 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
 
             <button
               type="submit"
+              disabled={submitting}
               className="mf-btn-green-3d flex min-h-[48px] w-full items-center justify-center px-4 py-3 text-sm font-extrabold"
             >
-              Submit Request (0.80 USDT min)
+              {submitting
+                ? 'Submitting...'
+                : `Submit Request (${minWithdraw.toFixed(2)} USDT min)`}
             </button>
           </form>
         </section>
@@ -315,6 +335,11 @@ export const WithdrawView: React.FC<WithdrawViewProps> = ({
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-[#00944A]">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     <span>Completed</span>
+                  </span>
+                ) : item.status === 'Pending' ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-extrabold text-amber-700">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>Pending</span>
                   </span>
                 ) : (
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-600">

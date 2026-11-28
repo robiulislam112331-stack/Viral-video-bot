@@ -1,0 +1,23 @@
+{
+  "botName": "Earn Money",
+  "welcomeTitle": "Welcome to Earn Money",
+  "welcomeSubtitle": "Join our 2 official channels to stay updated.",
+  "channel1Url": "https://t.me/waincomesite",
+  "channel2Url": "https://t.me/premiumapps5462",
+  "referBonusAmount": 0.1,
+  "minWithdrawAmount": 0.8,
+  "supportUsername": "@waincomesite",
+  "tasks": [
+    {
+      "id": "task_verify_app",
+      "title": "Verify App",
+      "badge": "Daily",
+      "rewardUsdt": 0.2,
+      "url": "https://t.me/premiumapps5462",
+      "completed": false,
+      "active": true,
+      "createdBy": "admin"
+    }
+  ],
+  "updatedAt": "2026-11-28T07:48:42.144Z"
+}

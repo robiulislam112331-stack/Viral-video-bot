@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Clock, Copy, Share2, ShieldCheck, Tv, UserPlus, Users } from 'lucide-react';
-import type { EarnMoneyState, ModalType } from '../../types/earnMoney';
+import { deriveTelegramHandle } from '../../data/defaultEarnMoneyState';
+import type { EarnMoneyConfig, EarnMoneyState, ModalType } from '../../types/earnMoney';
 import { openExternalTelegramLink } from '../../utils/telegram';
 
 interface ReferViewProps {
   state: EarnMoneyState;
+  config: EarnMoneyConfig;
   onCopyInviteLink: () => void;
   onJoinChannel: (channel: 'waincomesite' | 'premiumapps') => void;
   onVerifyActivate: () => void;
@@ -15,6 +17,7 @@ type ReferralFilter = 'all' | 'active' | 'pending';
 
 export const ReferView: React.FC<ReferViewProps> = ({
   state,
+  config,
   onCopyInviteLink,
   onJoinChannel,
   onVerifyActivate,
@@ -23,10 +26,12 @@ export const ReferView: React.FC<ReferViewProps> = ({
   const [filter, setFilter] = useState<ReferralFilter>('all');
   const [copied, setCopied] = useState(false);
 
+  const channel1Handle = deriveTelegramHandle(config.channel1Url, '@Channel1');
+  const channel2Handle = deriveTelegramHandle(config.channel2Url, '@Channel2');
   const inviteLink = `https://t.me/moneyxearnbot?start=ref_${state.userId}`;
   const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
     inviteLink
-  )}&text=${encodeURIComponent('Join Earn Money & earn daily USDT BEP20 rewards!')}`;
+  )}&text=${encodeURIComponent(`Join ${config.botName} & earn daily USDT BEP20 rewards!`)}`;
 
   const handleCopy = () => {
     onCopyInviteLink();
@@ -68,7 +73,9 @@ export const ReferView: React.FC<ReferViewProps> = ({
             {state.referBalance.toFixed(2)}{' '}
             <span className="text-sm font-bold text-[#00944A]">USDT</span>
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-400">+0.10 USDT / Bonus</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+            +{config.referBonusAmount.toFixed(2)} USDT / Bonus
+          </p>
         </div>
       </section>
 
@@ -111,8 +118,8 @@ export const ReferView: React.FC<ReferViewProps> = ({
               Your Invite Link
             </h2>
             <p className="mt-0.5 text-xs font-medium text-slate-500">
-              Share your link to earn +0.02 USDT per verified referral and +0.10 USDT milestone
-              rewards.
+              Share your link to earn +0.02 USDT per verified referral and +
+              {config.referBonusAmount.toFixed(2)} USDT milestone rewards.
             </p>
           </div>
 
@@ -166,12 +173,12 @@ export const ReferView: React.FC<ReferViewProps> = ({
 
           <div className="space-y-2.5">
             <a
-              href="https://t.me/waincomesite"
+              href={config.channel1Url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
                 onJoinChannel('waincomesite');
-                if (openExternalTelegramLink('https://t.me/waincomesite')) {
+                if (openExternalTelegramLink(config.channel1Url)) {
                   e.preventDefault();
                 }
               }}
@@ -179,7 +186,7 @@ export const ReferView: React.FC<ReferViewProps> = ({
             >
               <span className="flex items-center gap-2.5 text-xs font-bold text-[#111827]">
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
-                <span>Join @waincomesite</span>
+                <span>Join {channel1Handle}</span>
               </span>
               {state.joinedWaincomesite ? (
                 <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">
@@ -195,12 +202,12 @@ export const ReferView: React.FC<ReferViewProps> = ({
             </a>
 
             <a
-              href="https://t.me/premiumapps5462"
+              href={config.channel2Url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
                 onJoinChannel('premiumapps');
-                if (openExternalTelegramLink('https://t.me/premiumapps5462')) {
+                if (openExternalTelegramLink(config.channel2Url)) {
                   e.preventDefault();
                 }
               }}
@@ -208,7 +215,7 @@ export const ReferView: React.FC<ReferViewProps> = ({
             >
               <span className="flex items-center gap-2.5 text-xs font-bold text-[#111827]">
                 <ShieldCheck className="h-4 w-4 text-[#00944A]" />
-                <span>Join @premiumapps5462</span>
+                <span>Join {channel2Handle}</span>
               </span>
               {state.joinedPremiumApps ? (
                 <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#00944A]">

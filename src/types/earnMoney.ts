@@ -17,6 +17,21 @@ export interface BonusTaskItem {
   rewardUsdt: number;
   url?: string;
   completed: boolean;
+  active?: boolean;
+  createdBy?: 'admin' | 'user';
+}
+
+export interface EarnMoneyConfig {
+  botName: string;
+  welcomeTitle: string;
+  welcomeSubtitle: string;
+  channel1Url: string;
+  channel2Url: string;
+  referBonusAmount: number;
+  minWithdrawAmount: number;
+  supportUsername: string;
+  tasks: BonusTaskItem[];
+  updatedAt: string;
 }
 
 export interface ReferralItem {
@@ -34,13 +49,20 @@ export interface WithdrawalItem {
   amountUsdt: number;
   address: string;
   date: string;
-  status: 'Completed' | 'Rejected';
+  status: 'Pending' | 'Completed' | 'Rejected';
+}
+
+export interface AdminWithdrawalRecord extends WithdrawalItem {
+  userId: string;
+  userName: string;
+  userBalance: number;
 }
 
 export interface EarnMoneyState {
   userId: string;
   userName: string;
   userAvatar: string;
+  isBlocked?: boolean;
   totalBalance: number;
   referBalance: number;
   totalIncome: number;
@@ -58,6 +80,7 @@ export interface EarnMoneyState {
   joinedWaincomesite: boolean;
   joinedPremiumApps: boolean;
   activateAdsDone: number;
+  completedTaskIds?: string[];
   bonusTasks: BonusTaskItem[];
   referralsList: ReferralItem[];
   withdrawHistory: WithdrawalItem[];

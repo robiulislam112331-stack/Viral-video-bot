@@ -9,16 +9,18 @@ import {
   PlayCircle,
   Users,
 } from 'lucide-react';
-import type { EarnMoneyState, EarnMoneyTab, ModalType } from '../../types/earnMoney';
+import type { EarnMoneyConfig, EarnMoneyState, EarnMoneyTab, ModalType } from '../../types/earnMoney';
 
 interface HomeViewProps {
   state: EarnMoneyState;
+  config: EarnMoneyConfig;
   onNavigateTab: (tab: EarnMoneyTab, scrollToHistory?: boolean) => void;
   onOpenModal: (modal: ModalType) => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
   state,
+  config,
   onNavigateTab,
   onOpenModal,
 }) => {
@@ -46,7 +48,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       id: 'ref_prog',
       title: 'Referral Program',
       subtitle: 'Invite friends & earn instant USDT bonuses',
-      extra: '+0.10 USDT',
+      extra: `+${config.referBonusAmount.toFixed(2)} USDT`,
       icon: <Users className="h-5 w-5" />,
       onClick: () => onNavigateTab('refer'),
     },

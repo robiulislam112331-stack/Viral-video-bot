@@ -3,6 +3,7 @@ import { Check, Copy, Menu } from 'lucide-react';
 import { DEFAULT_AVATAR } from '../../utils/telegram';
 
 interface TopHeaderProps {
+  botName: string;
   userName: string;
   userId: string;
   userAvatar: string;
@@ -10,6 +11,7 @@ interface TopHeaderProps {
 }
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
+  botName,
   userName,
   userId,
   userAvatar,
@@ -69,16 +71,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Earn Money Logo / Menu button */}
+        {/* Right: Bot Name Logo / Menu button */}
         <div className="flex shrink-0 items-center">
           <button
             type="button"
             onClick={onOpenMenu}
-            aria-label="Open Earn Money menu"
+            aria-label={`Open ${botName} menu`}
             className="mf-btn-3d inline-flex min-h-[42px] items-center gap-2 px-3.5 py-2 text-[#111827]"
           >
             <span className="font-display text-xs font-extrabold tracking-tight text-[#111827]">
-              Earn Money
+              {botName}
             </span>
             <Menu className="h-4 w-4 text-[#00944A]" />
           </button>
