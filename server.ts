@@ -1145,7 +1145,7 @@ async function startServer() {
     if (alreadyDone) {
       res.status(400).json({
         error:
-          resolvedType === 'Permanent'
+          resolvedType === 'Permanent' || resolvedType === '1 Time Remove'
             ? 'Task already completed.'
             : `Task already completed. Available again after ${resolvedType === '1 Week' ? '7 days' : '24 hours'}.`,
         state: syncUserWithConfig(user, now),

@@ -2,7 +2,7 @@ import type { BonusTaskItem, EarnMoneyConfig, EarnMoneyState, TaskType } from '.
 
 export const EARNMONEY_LIVE_CONFIG_KEY = 'earnmoney_live_config_v1';
 
-export const TASK_TYPES: TaskType[] = ['Permanent', 'Daily', '1 Week'];
+export const TASK_TYPES: TaskType[] = ['Permanent', 'Daily', '1 Week', '1 Time Remove'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -10,6 +10,15 @@ const WEEK_MS = 7 * DAY_MS;
 export function normalizeTaskType(rawType?: string, rawBadge?: string): TaskType {
   const candidate = (rawType || rawBadge || '').trim().toLowerCase();
   if (candidate === 'permanent') return 'Permanent';
+  if (
+    candidate === '1 time remove' ||
+    candidate === '1timeremove' ||
+    candidate === 'one time remove' ||
+    candidate === '1 time' ||
+    candidate === 'onetime'
+  ) {
+    return '1 Time Remove';
+  }
   if (candidate === '1 week' || candidate === '1week' || candidate === 'weekly' || candidate === 'week') {
     return '1 Week';
   }
@@ -17,7 +26,7 @@ export function normalizeTaskType(rawType?: string, rawBadge?: string): TaskType
 }
 
 export function getTaskCooldownMs(taskType: TaskType): number {
-  if (taskType === 'Permanent') return Number.POSITIVE_INFINITY;
+  if (taskType === 'Permanent' || taskType === '1 Time Remove') return Number.POSITIVE_INFINITY;
   if (taskType === '1 Week') return WEEK_MS;
   return DAY_MS;
 }
@@ -30,10 +39,13 @@ export function isTaskCompletedForUser(
   const resolvedType = normalizeTaskType(task.taskType, task.badge);
   const completedAt = state.taskCompletions?.[task.id];
   if (typeof completedAt === 'number' && Number.isFinite(completedAt) && completedAt > 0) {
-    if (resolvedType === 'Permanent') return true;
+    if (resolvedType === 'Permanent' || resolvedType === '1 Time Remove') return true;
     return now - completedAt < getTaskCooldownMs(resolvedType);
   }
-  if (resolvedType === 'Permanent' && state.completedTaskIds?.includes(task.id)) {
+  if (
+    (resolvedType === 'Permanent' || resolvedType === '1 Time Remove') &&
+    state.completedTaskIds?.includes(task.id)
+  ) {
     return true;
   }
   return Boolean(task.completed);

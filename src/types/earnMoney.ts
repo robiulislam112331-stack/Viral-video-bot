@@ -12,7 +12,7 @@ export type ModalType =
 
 export type ReferBonusType = 'instant' | 'after_activation';
 
-export type TaskType = 'Permanent' | 'Daily' | '1 Week';
+export type TaskType = 'Permanent' | 'Daily' | '1 Week' | '1 Time Remove';
 
 export interface BonusTaskItem {
   id: string;
